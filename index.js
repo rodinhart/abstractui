@@ -1,4 +1,4 @@
-import { range } from "./lib/lang.js"
+import { range, sleep } from "./lib/lang.js"
 import { grind, over, view } from "./lib/lenses.js"
 
 /*
@@ -8,8 +8,10 @@ only use HGroup etc, no divs
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
-(async)
+(async) requests
 DnD
+Avoid passing root state if possible
+Progress bar
 
 */
 
@@ -80,7 +82,7 @@ const createApp = (initialState) => {
   let prev = []
   let withPosition
 
-  const onEventǃ = (event, rawEvent) => {
+  const onEventǃ = async (event, rawEvent) => {
     switch (event.reason) {
       case "footer-click":
         state = {
@@ -157,10 +159,10 @@ const createApp = (initialState) => {
         return
     }
 
-    const tmp = render([App, { state }])
+    const tmp = await render([App, { state }])
     const measures = domǃ(document.getElementById("app"), tmp, prev, onEventǃ)
     prev = tmp
-    onEventǃ({ reason: "with-measures", measures })
+    await onEventǃ({ reason: "with-measures", measures })
   }
 
   window.addEventListener("resize", () => {
@@ -297,16 +299,20 @@ const eqal = (a, b) => {
   return keys.every((key) => eqal(a[key], b[key]))
 }
 
-// Render dsl to html
-const render = (el) => {
+// Render dsl to markup
+const render = async (el) => {
   if (Array.isArray(el)) {
     const [tag, props, ...children] = el
 
     if (typeof tag === "function") {
-      return render(tag({ ...props, children }))
+      return render(await tag({ ...props, children }))
     }
 
-    const mapped = children.flatMap((child) => render(child))
+    let mapped = []
+    for (const child of children) {
+      const tmp = await render(child)
+      mapped = [...mapped, ...tmp]
+    }
 
     return tag !== "fragment" ? [[tag, props, ...mapped]] : mapped
   }
@@ -314,7 +320,30 @@ const render = (el) => {
   return el !== null ? [String(el)] : []
 }
 
+const Fragment = ({ children }) => ["fragment", {}, ...children]
+
 // Components
+
+const memo = (f) => {
+  const cache = {}
+
+  return async (...args) => {
+    const hash = JSON.stringify(args)
+    if (!cache[hash]) {
+      cache[hash] = f(...args)
+    }
+
+    return cache[hash]
+  }
+}
+
+const loadItems = memo(async (itemCount) => {
+  await sleep(2000)
+
+  return new Array(itemCount)
+    .fill(1)
+    .map(() => Math.random().toString(16).substring(2))
+})
 
 const Editable = ({ state, lens }) => {
   const value = view(state, grind(...lens))
@@ -341,26 +370,28 @@ const Editable = ({ state, lens }) => {
       ]
 }
 
-const Fragment = ({ children }) => ["fragment", {}, ...children]
+const List = async ({ itemCount, state }) => {
+  const items = await loadItems(itemCount)
 
-const List = ({ items, state }) => [
-  Scroller,
-  { itemHeight: 15, items, state },
-  ({ index, item }) => [
-    "div",
-    {
-      style: {
-        display: "flex",
-      },
-    },
-    ["div", { style: { width: "200px" } }, `${index + 1}. `, item],
-    ...[...range(0, 14)].map((c) => [
+  return [
+    Scroller,
+    { itemHeight: 15, items, state },
+    ({ index, item }) => [
       "div",
-      { style: { width: "150px" } },
-      item.substring(0, c) + item.substring(c + 1),
-    ]),
-  ],
-]
+      {
+        style: {
+          display: "flex",
+        },
+      },
+      ["div", { style: { width: "200px" } }, `${index + 1}. `, item],
+      ...[...range(0, 14)].map((c) => [
+        "div",
+        { style: { width: "150px" } },
+        item.substring(0, c) + item.substring(c + 1),
+      ]),
+    ],
+  ]
+}
 
 const Scroller = ({ children, itemHeight, items, state }) => {
   const start = Math.floor((state.scrollTop ?? 0) / itemHeight)
@@ -421,7 +452,7 @@ const App = ({ state }) => [
     },
   },
   ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
-  [List, { items: state.items, state }],
+  [List, { itemCount: state.itemCount, state }],
   [
     "button",
     { onClick: { reason: "footer-click" }, style: { "margin-top": "10px" } },
@@ -474,8 +505,6 @@ const App = ({ state }) => [
 ]
 
 const app = createApp({
-  items: new Array(5e5)
-    .fill(1)
-    .map(() => Math.random().toString(16).substring(2)),
+  itemCount: 5e5,
   user: "Nicolette",
 })
