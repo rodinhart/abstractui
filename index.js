@@ -8,10 +8,9 @@ only use HGroup etc, no divs
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
-(async) requests
 DnD
-Avoid passing root state if possible
 Progress bar
+DOM-diff performance
 
 */
 
@@ -375,7 +374,13 @@ const List = async ({ itemCount, state }) => {
 
   return [
     Scroller,
-    { itemHeight: 15, items, state },
+    {
+      itemHeight: 15,
+      items,
+      scrollLens: ["scrollTop"],
+      sizeLens: ["scrollSize"],
+      state,
+    },
     ({ index, item }) => [
       "div",
       {
@@ -393,12 +398,22 @@ const List = async ({ itemCount, state }) => {
   ]
 }
 
-const Scroller = ({ children, itemHeight, items, state }) => {
-  const start = Math.floor((state.scrollTop ?? 0) / itemHeight)
+const Scroller = ({
+  children,
+  itemHeight,
+  items,
+  scrollLens,
+  sizeLens,
+  state,
+}) => {
+  const scrollTop = view(state, grind(...scrollLens)) ?? 0
+  const size = view(state, grind(...sizeLens))
+
+  const start = Math.floor(scrollTop / itemHeight)
 
   const end = Math.min(
     items.length,
-    start + Math.ceil((state.scrollSize?.[1] ?? 300) / itemHeight)
+    start + Math.ceil((size?.[1] ?? 300) / itemHeight)
   )
   const sub = []
   for (let i = start; i < end; i += 1) {
@@ -408,9 +423,9 @@ const Scroller = ({ children, itemHeight, items, state }) => {
   return [
     "div",
     {
-      "with-size": { lens: ["scrollSize"] },
-      "with-scroll": { lens: ["scrollTop"] },
-      scrollTop: state.scrollTop,
+      "with-size": { lens: sizeLens },
+      "with-scroll": { lens: scrollLens },
+      scrollTop,
       style: {
         "overflow-y": "scroll",
         width: "100%",
@@ -432,7 +447,7 @@ const Scroller = ({ children, itemHeight, items, state }) => {
           style: {
             left: "0px",
             position: "absolute",
-            top: `${state.scrollTop ?? 0}px`,
+            top: `${scrollTop}px`,
           },
         },
         ...sub,
