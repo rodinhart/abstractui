@@ -1,0 +1,57 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --border-color: #ddd;
+        --canvas-color: #f7f7f7;
+        --column-width: 210px;
+        --highlight-color: powderblue;
+        --page-color: white;
+        --shadow-color: #0006;
+        --text-padding: 5px;
+        --title-color: #eee;
+        --vscroll-width: 18px;
+        --window-height: 308px;
+      }
+
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 13px;
+      }
+
+      .window {
+        background-color: var(--page-color);
+        border: 1px solid var(--border-color);
+        box-shadow: 3px 2px 3px var(--shadow-color);
+        position: fixed;
+        user-select: none;
+        /* z-index: 2; */
+      }
+
+      .window-body {
+        padding: var(--text-padding);
+      }
+
+      .window__div {
+        display: flex;
+        flex-direction: column;
+        width: 300px;
+      }
+
+      .window-title {
+        align-items: stretch;
+        background-color: var(--title-color);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        font-weight: bold;
+        justify-content: space-between;
+        padding: var(--text-padding);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" style="position: relative"></div>
+    <script src="index.js" type="module"></script>
+  </body>
+</html>
