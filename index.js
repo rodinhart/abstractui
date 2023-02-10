@@ -268,34 +268,25 @@ const eqal = (a, b) => {
     return true
   }
 
-  if (typeof a !== typeof b || typeof a !== "object") {
-    return false
-  }
-
-  if (a instanceof Date) {
+  if (a instanceof Date && b instanceof Date) {
     return a.getTime() === b.getTime()
   }
 
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b) || a.length !== b.length) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((x, i) => eqal(x, b[i]))
+  }
+
+  if (typeof a === "object" && typeof b === "object") {
+    const keys = Object.keys(a)
+    if (Object.keys(b).length !== keys.length) {
+      // assumes no values of undefined
       return false
     }
 
-    return a.every((x, i) => eqal(x, b[i]))
+    return keys.every((key) => eqal(a[key], b[key]))
   }
 
-  // objects
-  if (Array.isArray(b)) {
-    return false
-  }
-
-  const keys = Object.keys(a)
-  if (Object.keys(b).length !== keys.length) {
-    // assumes no values of undefined
-    return false
-  }
-
-  return keys.every((key) => eqal(a[key], b[key]))
+  return false
 }
 
 // Render dsl to markup
@@ -337,7 +328,7 @@ const memo = (f) => {
 }
 
 const loadItems = memo(async (itemCount) => {
-  await sleep(2000)
+  // await sleep(2000)
 
   return new Array(itemCount)
     .fill(1)
@@ -517,6 +508,11 @@ const App = ({ state }) => [
           "A pair of star-crossed lovers take their life.",
         ],
       ],
+  [
+    "svg",
+    { width: 100, height: 100 },
+    ["rect", { x: 0, y: 0, width: 100, height: 100, fill: "green" }],
+  ],
 ]
 
 const app = createApp({
