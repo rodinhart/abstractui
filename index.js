@@ -83,6 +83,18 @@ const attributesǃ = (node, props, onEventǃ) => {
   }
 }
 
+const withProgress =
+  (f) =>
+  async (...args) => {
+    document.getElementById("app").style.opacity = 0.5
+
+    return f(...args).then((r) => {
+      document.getElementById("app").style.opacity = 1
+
+      return r
+    })
+  }
+
 // Create a new app
 const createApp = (initialState) => {
   let state
@@ -189,7 +201,7 @@ const createApp = (initialState) => {
         return
     }
 
-    const tmp = await render([App, { state }], withMeasures)
+    const tmp = await withProgress(render)([App, { state }], withMeasures)
     const measures = domǃ(document.getElementById("app"), tmp, prev, {
       onEventǃ,
     })
@@ -646,21 +658,9 @@ const loadItems = async (itemCount) => {
     .map(() => Math.random().toString(16).substring(2))
 }
 
-const withProgress =
-  (f) =>
-  async (...args) => {
-    document.getElementById("app").style.opacity = 0.5
-
-    return f(...args).then((r) => {
-      document.getElementById("app").style.opacity = 1
-
-      return r
-    })
-  }
-
 const init = eval("(" + (window.location.search.substring(7) || "{}") + ")")
 const app = createApp({
-  lazyItems: memoPromise(() => withProgress(loadItems)(5e5)),
+  lazyItems: memoPromise(() => loadItems(5e5)),
   user: "Nicolette",
   ...init,
 })
