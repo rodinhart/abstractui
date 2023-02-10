@@ -4,7 +4,9 @@ import { grind, over, view } from "./lib/lenses.js"
 /*
 
 TODOs
-allow ["div", "hello", "world"]
+
+with-size isn't essential state
+what about lazy loading mutable data?
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
@@ -160,7 +162,9 @@ const createApp = (initialState) => {
 
     // console.log("render", state)
     const tmp = await render([App, { state }])
-    const measures = domǃ(document.getElementById("app"), tmp, prev, onEventǃ)
+    const measures = domǃ(document.getElementById("app"), tmp, prev, {
+      onEventǃ,
+    })
     prev = tmp
     await onEventǃ({ reason: "with-measures", measures })
   }
@@ -192,7 +196,7 @@ const createApp = (initialState) => {
 }
 
 // Update DOM with differences from prev to els.
-const domǃ = (target, els, prev, onEventǃ) => {
+const domǃ = (target, els, prev, { ns, onEventǃ }) => {
   const measures = []
   for (let i = 0; i < els.length; i += 1) {
     const el = els[i]
@@ -201,7 +205,12 @@ const domǃ = (target, els, prev, onEventǃ) => {
       const [tag, props, ...children] = el
       if (!Array.isArray(prev[i]) || prev[i][0] !== tag) {
         // new
-        const node = document.createElement(tag)
+        if (tag === "svg") {
+          ns = "http://www.w3.org/2000/svg"
+        }
+        const node = !ns
+          ? document.createElement(tag)
+          : document.createElementNS(ns, tag)
         measures.push(...attributesǃ(node, props, onEventǃ))
 
         if (i >= target.childNodes.length) {
@@ -210,7 +219,7 @@ const domǃ = (target, els, prev, onEventǃ) => {
           target.replaceChild(node, target.childNodes[i])
         }
 
-        measures.push(...domǃ(node, children, [], onEventǃ))
+        measures.push(...domǃ(node, children, [], { ns, onEventǃ }))
       } else {
         // update
         const node = target.childNodes[i]
@@ -235,7 +244,9 @@ const domǃ = (target, els, prev, onEventǃ) => {
             onEventǃ
           )
         )
-        measures.push(...domǃ(node, children, prev[i].slice(2), onEventǃ))
+        measures.push(
+          ...domǃ(node, children, prev[i].slice(2), { ns, onEventǃ })
+        )
       }
     } else {
       // text node
@@ -358,6 +369,7 @@ const Window = ({ children, id, onClose, title }) => [
         {
           onClick: onClose,
           style: { cursor: "pointer", position: "relative", top: "-3px" },
+          title: "Close window",
         },
         "🗙",
       ],
@@ -502,6 +514,29 @@ const App = ({ state }) => [
   {},
   ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
   [List, { itemCount: state.itemCount, state }],
+  [
+    "div",
+    { style: { height: "100px" } },
+    [
+      "svg",
+      { width: 200, height: 100 },
+      [
+        "rect",
+        { x: 10, y: 10, width: 80, height: 80, stroke: "black", fill: "green" },
+      ],
+      [
+        "rect",
+        {
+          x: 110,
+          y: 10,
+          width: 80,
+          height: 80,
+          stroke: "black",
+          fill: "white",
+        },
+      ],
+    ],
+  ],
   [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
   !state.showWindow
     ? null
@@ -520,11 +555,6 @@ const App = ({ state }) => [
         ["br", {}],
         "A pair of star-crossed lovers take their life.",
       ],
-  [
-    "svg",
-    { width: 100, height: 100 },
-    ["rect", { x: 0, y: 0, width: 100, height: 100, fill: "green" }],
-  ],
 ]
 
 const app = createApp({
