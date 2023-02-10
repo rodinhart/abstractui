@@ -10,7 +10,6 @@ what about lazy loading mutable data?
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
-DnD
 Progress bar
 DOM-diff performance
 
@@ -56,6 +55,25 @@ const attributesǃ = (node, props, onEventǃ) => {
           onEventǃ({ ...val, reason: "with-scroll" }, rawEvent)
         break
 
+      case "with-drag":
+        node.setAttribute("draggable", "true")
+        node.ondragstart = (rawEvent) => {
+          onEventǃ({ ...val, reason: "drag-start" }, rawEvent)
+        }
+        node.ondragend = (rawEvent) => {
+          onEventǃ({ reason: "drag-end" }, rawEvent)
+        }
+        break
+
+      case "with-drop":
+        node.ondragover = (rawEvent) => {
+          rawEvent.preventDefault()
+        }
+        node.ondrop = (rawEvent) => {
+          onEventǃ({ ...val, reason: "drop" }, rawEvent)
+        }
+        break
+
       case "with-size":
         measures.push({
           ...val,
@@ -81,10 +99,26 @@ const attributesǃ = (node, props, onEventǃ) => {
 const createApp = (initialState) => {
   let state
   let prev = []
+
+  let withDrag
   let withPosition
 
   const onEventǃ = async (event, rawEvent) => {
     switch (event.reason) {
+      case "drag-end":
+        withDrag = undefined
+        break
+
+      case "drag-start":
+        withDrag = event
+        break
+
+      case "drop":
+        if (withDrag) {
+          rawEvent.target.setAttribute("fill", withDrag.color)
+        }
+        break
+
       case "footer-click":
         state = {
           ...state,
@@ -327,10 +361,10 @@ const Button = ({ label, onClick }) => ["button", { onClick }, label]
 
 const Fragment = ({ children }) => ["fragment", {}, ...children]
 
-const HGroup = ({ children }) => [
+const HGroup = ({ children, style }) => [
   "div",
   {
-    style: { display: "flex" },
+    style: { display: "flex", ...style },
   },
   ...children,
 ]
@@ -515,25 +549,74 @@ const App = ({ state }) => [
   ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
   [List, { itemCount: state.itemCount, state }],
   [
-    "div",
+    HGroup,
     { style: { height: "100px" } },
     [
-      "svg",
-      { width: 200, height: 100 },
+      "div",
+      {
+        style: { height: "100px", width: "100px" },
+        "with-drag": { color: "green" },
+      },
       [
-        "rect",
-        { x: 10, y: 10, width: 80, height: 80, stroke: "black", fill: "green" },
+        "svg",
+        { width: 100, height: 100 },
+        [
+          "rect",
+          {
+            x: 10,
+            y: 10,
+            width: 80,
+            height: 80,
+            stroke: "black",
+            fill: "green",
+          },
+        ],
+        ,
       ],
+    ],
+    [
+      "div",
+      {
+        style: { height: "100px", width: "100px" },
+        "with-drop": { color: "white" },
+      },
       [
-        "rect",
-        {
-          x: 110,
-          y: 10,
-          width: 80,
-          height: 80,
-          stroke: "black",
-          fill: "white",
-        },
+        "svg",
+        { width: 100, height: 100 },
+        [
+          "rect",
+          {
+            x: 10,
+            y: 10,
+            width: 80,
+            height: 80,
+            stroke: "black",
+            fill: "white",
+          },
+        ],
+      ],
+    ],
+    [
+      "div",
+      {
+        style: { height: "100px", width: "100px" },
+        "with-drag": { color: "blue" },
+      },
+      [
+        "svg",
+        { width: 100, height: 100 },
+        [
+          "rect",
+          {
+            x: 10,
+            y: 10,
+            width: 80,
+            height: 80,
+            stroke: "black",
+            fill: "blue",
+          },
+        ],
+        ,
       ],
     ],
   ],
