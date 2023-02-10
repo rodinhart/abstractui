@@ -5,7 +5,6 @@ import { grind, over, view } from "./lib/lenses.js"
 
 TODOs
 
-with-size isn't essential state
 what about lazy loading mutable data?
 allow namespaced plugin of event handlers
 define serializable lenses?
@@ -17,7 +16,6 @@ DOM-diff performance
 
 // Set node values, attribute and event handlers.
 const attributesǃ = (node, props, onEventǃ) => {
-  const measures = []
   for (const [key, val] of Object.entries(props)) {
     switch (key) {
       case "scrollTop":
@@ -74,14 +72,6 @@ const attributesǃ = (node, props, onEventǃ) => {
         }
         break
 
-      case "with-size":
-        measures.push({
-          ...val,
-          node,
-          properties: ["offsetWidth", "offsetHeight"],
-        })
-        break
-
       default:
         if (!key.startsWith("on")) {
           node.setAttribute(key, val)
@@ -91,8 +81,6 @@ const attributesǃ = (node, props, onEventǃ) => {
         break
     }
   }
-
-  return measures
 }
 
 // Create a new app
@@ -102,6 +90,7 @@ const createApp = (initialState) => {
 
   let withDrag
   let withPosition
+  const withMeasures = {}
 
   const onEventǃ = async (event, rawEvent) => {
     switch (event.reason) {
@@ -132,17 +121,16 @@ const createApp = (initialState) => {
 
       case "with-measures":
         {
-          let changedState = state
-          for (const { lens, node, properties } of event.measures) {
+          let rerender = false
+          for (const { id, node, properties } of event.measures) {
             const values = properties.map((p) => node[p])
-            if (!eqal(view(changedState, grind(...lens)), values)) {
-              changedState = over(changedState, grind(...lens), () => values)
+            if (!eqal(withMeasures[id], values)) {
+              withMeasures[id] = values
+              rerender = true
             }
           }
 
-          if (changedState !== state) {
-            state = changedState
-          } else {
+          if (!rerender) {
             return
           }
         }
@@ -194,8 +182,7 @@ const createApp = (initialState) => {
         return
     }
 
-    // console.log("render", state)
-    const tmp = await render([App, { state }])
+    const tmp = await render([App, { state }], withMeasures)
     const measures = domǃ(document.getElementById("app"), tmp, prev, {
       onEventǃ,
     })
@@ -208,7 +195,7 @@ const createApp = (initialState) => {
       reason: "with-measures",
       measures: [
         {
-          lens: ["_dummy"],
+          id: "WINDOW",
           node: document.body,
           properties: ["offsetWidth", "offsetHeight"],
         },
@@ -236,7 +223,7 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
     const el = els[i]
     if (Array.isArray(el)) {
       // element node
-      const [tag, props, ...children] = el
+      const [tag, { _size, ...props }, ...children] = el
       if (!Array.isArray(prev[i]) || prev[i][0] !== tag) {
         // new
         if (tag === "svg") {
@@ -245,7 +232,16 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
         const node = !ns
           ? document.createElement(tag)
           : document.createElementNS(ns, tag)
-        measures.push(...attributesǃ(node, props, onEventǃ))
+
+        if (_size) {
+          measures.push({
+            id: _size,
+            node,
+            properties: ["offsetWidth", "offsetHeight"],
+          })
+        }
+
+        attributesǃ(node, props, onEventǃ)
 
         if (i >= target.childNodes.length) {
           target.appendChild(node)
@@ -258,6 +254,14 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
         // update
         const node = target.childNodes[i]
 
+        if (_size) {
+          measures.push({
+            id: _size,
+            node,
+            properties: ["offsetWidth", "offsetHeight"],
+          })
+        }
+
         // removed attributes
         for (const key of Object.keys(prev[i][1])) {
           if (props[key] === undefined) {
@@ -266,18 +270,16 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
         }
 
         // update attributes
-        measures.push(
-          ...attributesǃ(
-            node,
-            Object.fromEntries(
-              Object.entries(props).filter(
-                ([key, val]) =>
-                  key === "with-size" || !eqal(val, prev[i][1][key])
-              )
-            ),
-            onEventǃ
-          )
+        attributesǃ(
+          node,
+          Object.fromEntries(
+            Object.entries(props).filter(
+              ([key, val]) => !eqal(val, prev[i][1][key])
+            )
+          ),
+          onEventǃ
         )
+
         measures.push(
           ...domǃ(node, children, prev[i].slice(2), { ns, onEventǃ })
         )
@@ -336,17 +338,28 @@ const eqal = (a, b) => {
 }
 
 // Render dsl to markup
-const render = async (el) => {
+const render = async (el, withMeasures) => {
   if (Array.isArray(el)) {
     const [tag, props, ...children] = el
 
     if (typeof tag === "function") {
-      return render(await tag({ ...props, children }))
+      return render(await tag({ ...props, children }), withMeasures)
+    } else if (tag && tag.fn) {
+      const r = await tag.fn({
+        _size: withMeasures[tag.id],
+        ...props,
+        children,
+      })
+
+      return await render(
+        [r[0], { _size: tag.id, ...r[1] }, ...r.slice(2)],
+        withMeasures
+      )
     }
 
     let mapped = []
     for (const child of children) {
-      const tmp = await render(child)
+      const tmp = await render(child, withMeasures)
       mapped = [...mapped, ...tmp]
     }
 
@@ -469,7 +482,6 @@ const List = async ({ itemCount, state }) => {
       itemHeight: 15,
       items,
       scrollLens: ["scrollTop"],
-      sizeLens: ["scrollSize"],
       state,
     },
     ({ index, item }) => [
@@ -485,46 +497,34 @@ const List = async ({ itemCount, state }) => {
   ]
 }
 
-const Scroller = ({
-  children,
-  itemHeight,
-  items,
-  scrollLens,
-  sizeLens,
-  state,
-}) => {
-  const scrollTop = view(state, grind(...scrollLens)) ?? 0
-  const size = view(state, grind(...sizeLens))
+const withSize = (component) => {
+  const id = Math.random().toString(16).substring(2)
 
-  const start = Math.floor(scrollTop / itemHeight)
+  return { id, fn: async (...args) => component(...args) }
+}
 
-  const end = Math.min(
-    items.length,
-    start + Math.ceil((size?.[1] ?? 300) / itemHeight)
-  )
-  const sub = []
-  for (let i = start; i < end; i += 1) {
-    sub.push(children[0]({ index: i, item: items[i] }))
-  }
+const Scroller = withSize(
+  ({ children, itemHeight, items, scrollLens, state, _size: size }) => {
+    const scrollTop = view(state, grind(...scrollLens)) ?? 0
 
-  return [
-    "div",
-    {
-      "with-size": { lens: sizeLens },
-      "with-scroll": { lens: scrollLens },
-      scrollTop,
-      style: {
-        "overflow-y": "scroll",
-        width: "100%",
-      },
-    },
-    [
+    const start = Math.floor(scrollTop / itemHeight)
+
+    const end = Math.min(
+      items.length,
+      start + Math.ceil((size?.[1] ?? 300) / itemHeight)
+    )
+    const sub = []
+    for (let i = start; i < end; i += 1) {
+      sub.push(children[0]({ index: i, item: items[i] }))
+    }
+
+    return [
       "div",
       {
+        "with-scroll": { lens: scrollLens },
+        scrollTop,
         style: {
-          height: `${itemHeight * (items.length + 1)}px`,
-          "overflow-y": "hidden",
-          position: "relative",
+          "overflow-y": "scroll",
           width: "100%",
         },
       },
@@ -532,16 +532,27 @@ const Scroller = ({
         "div",
         {
           style: {
-            left: "0px",
-            position: "absolute",
-            top: `${scrollTop}px`,
+            height: `${itemHeight * (items.length + 1)}px`,
+            "overflow-y": "hidden",
+            position: "relative",
+            width: "100%",
           },
         },
-        ...sub,
+        [
+          "div",
+          {
+            style: {
+              left: "0px",
+              position: "absolute",
+              top: `${scrollTop}px`,
+            },
+          },
+          ...sub,
+        ],
       ],
-    ],
-  ]
-}
+    ]
+  }
+)
 
 const App = ({ state }) => [
   VGroup,
