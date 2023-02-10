@@ -4,7 +4,7 @@ import { grind, over, view } from "./lib/lenses.js"
 /*
 
 TODOs
-only use HGroup etc, no divs
+allow ["div", "hello", "world"]
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
@@ -158,6 +158,7 @@ const createApp = (initialState) => {
         return
     }
 
+    // console.log("render", state)
     const tmp = await render([App, { state }])
     const measures = domǃ(document.getElementById("app"), tmp, prev, onEventǃ)
     prev = tmp
@@ -310,7 +311,60 @@ const render = async (el) => {
   return el !== null ? [String(el)] : []
 }
 
+// Primitives
+const Button = ({ label, onClick }) => ["button", { onClick }, label]
+
 const Fragment = ({ children }) => ["fragment", {}, ...children]
+
+const HGroup = ({ children }) => [
+  "div",
+  {
+    style: { display: "flex" },
+  },
+  ...children,
+]
+
+const VGroup = ({ children }) => [
+  "div",
+  {
+    style: {
+      "align-items": "start",
+      display: "flex",
+      "flex-direction": "column",
+      height: "100%",
+    },
+  },
+  ...children,
+]
+
+const Window = ({ children, id, onClose, title }) => [
+  "div",
+  {
+    id,
+    class: "window",
+  },
+  [
+    "div",
+    { class: "window__div" },
+    [
+      "div",
+      {
+        class: "window-title",
+        "window-handle": { windowId: id },
+      },
+      ["div", {}, title],
+      [
+        "div",
+        {
+          onClick: onClose,
+          style: { cursor: "pointer", position: "relative", top: "-3px" },
+        },
+        "🗙",
+      ],
+    ],
+  ],
+  ["div", { class: "window-body" }, ...children],
+]
 
 // Components
 
@@ -373,12 +427,8 @@ const List = async ({ itemCount, state }) => {
       state,
     },
     ({ index, item }) => [
-      "div",
-      {
-        style: {
-          display: "flex",
-        },
-      },
+      HGroup,
+      {},
       ["div", { style: { width: "200px" } }, `${index + 1}. `, item],
       ...[...range(0, 14)].map((c) => [
         "div",
@@ -448,65 +498,27 @@ const Scroller = ({
 }
 
 const App = ({ state }) => [
-  "div",
-  {
-    style: {
-      "align-items": "start",
-      display: "flex",
-      "flex-direction": "column",
-      height: "100%",
-    },
-  },
+  VGroup,
+  {},
   ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
   [List, { itemCount: state.itemCount, state }],
-  [
-    "button",
-    { onClick: { reason: "footer-click" }, style: { "margin-top": "10px" } },
-    "Footer",
-  ],
+  [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
   !state.showWindow
     ? null
     : [
-        "div",
-        {
-          id: "riscos",
-          class: "window",
-        },
-        [
-          "div",
-          { class: "window__div" },
-          [
-            "div",
-            {
-              class: "window-title",
-              "window-handle": { windowId: "riscos" },
-            },
-            ["div", {}, "RISC-OS"],
-            [
-              "div",
-              {
-                onClick: { reason: "footer-click" },
-                style: { cursor: "pointer", position: "relative", top: "-3px" },
-              },
-              "🗙",
-            ],
-          ],
-        ],
-        [
-          "div",
-          { class: "window-body" },
-          "Two households, both alike in dignity",
-          ["br", {}],
-          "(In fair Verona, where we lay our scene),",
-          ["br", {}],
-          "From ancient grudge break to new mutiny,",
-          ["br", {}],
-          "Where civil blood makes civil hands unclean.",
-          ["br", {}],
-          "From forth the fatal loins of these two foes",
-          ["br", {}],
-          "A pair of star-crossed lovers take their life.",
-        ],
+        Window,
+        { id: "riscos", onClose: { reason: "footer-click" }, title: "RISC-OS" },
+        "Two households, both alike in dignity",
+        ["br", {}],
+        "(In fair Verona, where we lay our scene),",
+        ["br", {}],
+        "From ancient grudge break to new mutiny,",
+        ["br", {}],
+        "Where civil blood makes civil hands unclean.",
+        ["br", {}],
+        "From forth the fatal loins of these two foes",
+        ["br", {}],
+        "A pair of star-crossed lovers take their life.",
       ],
   [
     "svg",
