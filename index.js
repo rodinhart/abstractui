@@ -1,16 +1,17 @@
-import { range, sleep } from "./lib/lang.js"
+import { memoPromise, range, sleep } from "./lib/lang.js"
 import { grind, over, view } from "./lib/lenses.js"
 
 /*
 
 TODOs
 
-what about lazy loading mutable data?
+Progress bar
 allow namespaced plugin of event handlers
 define serializable lenses?
 clean up metalui, dejavue etc.
-Progress bar
 DOM-diff performance
+
+How to use in WS
 
 */
 
@@ -117,6 +118,13 @@ const createApp = (initialState) => {
 
       case "init":
         state = initialState
+        break
+
+      case "show-items":
+        state = {
+          ...state,
+          showItems: true,
+        }
         break
 
       case "with-measures":
@@ -426,28 +434,6 @@ const Window = ({ children, id, onClose, title }) => [
 ]
 
 // Components
-
-const memo = (f) => {
-  const cache = {}
-
-  return async (...args) => {
-    const hash = JSON.stringify(args)
-    if (!cache[hash]) {
-      cache[hash] = f(...args)
-    }
-
-    return cache[hash]
-  }
-}
-
-const loadItems = memo(async (itemCount) => {
-  // await sleep(2000)
-
-  return new Array(itemCount)
-    .fill(1)
-    .map(() => Math.random().toString(16).substring(2))
-})
-
 const Editable = ({ state, lens }) => {
   const value = view(state, grind(...lens))
 
@@ -473,8 +459,8 @@ const Editable = ({ state, lens }) => {
       ]
 }
 
-const List = async ({ itemCount, state }) => {
-  const items = await loadItems(itemCount)
+const List = async ({ lazyItems, state }) => {
+  const items = await lazyItems()
 
   return [
     Scroller,
@@ -558,7 +544,9 @@ const App = ({ state }) => [
   VGroup,
   {},
   ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
-  [List, { itemCount: state.itemCount, state }],
+  !state.showItems
+    ? [Button, { label: "Show items", onClick: { reason: "show-items" } }]
+    : [List, { lazyItems: state.lazyItems, state }],
   [
     HGroup,
     { style: { height: "100px" } },
@@ -651,10 +639,17 @@ const App = ({ state }) => [
       ],
 ]
 
-const init = eval("(" + (window.location.search.substring(7) || "{}") + ")")
+const loadItems = async (itemCount) => {
+  await sleep(2000)
 
+  return new Array(itemCount)
+    .fill(1)
+    .map(() => Math.random().toString(16).substring(2))
+}
+
+const init = eval("(" + (window.location.search.substring(7) || "{}") + ")")
 const app = createApp({
-  itemCount: 5e5,
+  lazyItems: memoPromise(() => loadItems(5e5)),
   user: "Nicolette",
   ...init,
 })
