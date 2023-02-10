@@ -640,7 +640,10 @@ const App = ({ state }) => [
       ],
 ]
 
+const init = eval("(" + (window.location.search.substring(7) || "{}") + ")")
+
 const app = createApp({
   itemCount: 5e5,
   user: "Nicolette",
+  ...init,
 })
