@@ -5,10 +5,13 @@ import { grind, over, view } from "./lib/lenses.js"
 
 TODOs
 
-allow namespaced plugin of event handlers
+Namespaces for events: core, user. Specify event handlers with HOC.
+Mark abstractui Vs target e.g. DOM/Canvas
+
 define serializable lenses?
 clean up metalui, dejavue etc.
 DOM-diff performance
+use webworker to make sync
 
 How to use in WS
 
@@ -18,6 +21,12 @@ How to use in WS
 const attributesǃ = (node, props, onEventǃ) => {
   for (const [key, val] of Object.entries(props)) {
     switch (key) {
+      case "canvas-draw":
+        const g = node.getContext("2d")
+        g.fillStyle = "red"
+        g.fillRect(10, 10, 80, 80)
+        break
+
       case "scrollTop":
         requestAnimationFrame(() => {
           node.scrollTop = val
@@ -100,6 +109,7 @@ const createApp = (initialState) => {
   let state
   let prev = []
 
+  const eventHandlers = {}
   let withDrag
   let withPosition
   const withMeasures = {}
@@ -120,22 +130,8 @@ const createApp = (initialState) => {
         }
         break
 
-      case "footer-click":
-        state = {
-          ...state,
-          showWindow: !state.showWindow,
-        }
-        break
-
       case "init":
         state = initialState
-        break
-
-      case "show-items":
-        state = {
-          ...state,
-          showItems: true,
-        }
         break
 
       case "with-measures":
@@ -174,34 +170,26 @@ const createApp = (initialState) => {
         )
         break
 
-      case "Editable/edit-user":
-        state = over(state, grind(...event.lens), (value) => ({
-          _edit: true,
-          tmp: value,
-        }))
-        break
-
-      case "Editable/update-user":
-        state = over(state, grind(...event.lens), (value) => value.tmp)
-        break
-
-      case "Editable/user-input":
-        state = over(state, grind(...event.lens), (value) => ({
-          ...value,
-          tmp: rawEvent.target.value
-            .split(/\s+/)
-            .filter((w) => w)
-            .map((w) => `${w[0].toUpperCase()}${w.substring(1)}`)
-            .join(" "),
-        }))
-        break
-
       default:
-        console.warn(`Unknown event ${event.reason}`)
-        return
+        if (eventHandlers[event.reason]) {
+          const newState = eventHandlers[event.reason](state)
+          if (newState === state) {
+            return
+          }
+
+          state = newState
+          break
+        } else {
+          console.warn(`Unknown event ${event.reason}`)
+          return
+        }
     }
 
-    const tmp = await withProgress(render)([App, { state }], withMeasures)
+    const tmp = await withProgress(render)(
+      eventHandlers,
+      [App, { state }],
+      withMeasures
+    )
     const measures = domǃ(document.getElementById("app"), tmp, prev, {
       onEventǃ,
     })
@@ -242,7 +230,7 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
     const el = els[i]
     if (Array.isArray(el)) {
       // element node
-      const [tag, { _size, ...props }, ...children] = el
+      const [tag, { _measure, ...props }, ...children] = el
       if (!Array.isArray(prev[i]) || prev[i][0] !== tag) {
         // new
         if (tag === "svg") {
@@ -252,11 +240,10 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
           ? document.createElement(tag)
           : document.createElementNS(ns, tag)
 
-        if (_size) {
+        if (_measure) {
           measures.push({
-            id: _size,
             node,
-            properties: ["offsetWidth", "offsetHeight"],
+            ..._measure,
           })
         }
 
@@ -273,11 +260,10 @@ const domǃ = (target, els, prev, { ns, onEventǃ }) => {
         // update
         const node = target.childNodes[i]
 
-        if (_size) {
+        if (_measure) {
           measures.push({
-            id: _size,
             node,
-            properties: ["offsetWidth", "offsetHeight"],
+            ..._measure,
           })
         }
 
@@ -357,28 +343,44 @@ const eqal = (a, b) => {
 }
 
 // Render dsl to markup
-const render = async (el, withMeasures) => {
+const render = async (handlers, el, withMeasures) => {
   if (Array.isArray(el)) {
     const [tag, props, ...children] = el
 
     if (typeof tag === "function") {
-      return render(await tag({ ...props, children }), withMeasures)
-    } else if (tag && tag.fn) {
-      const r = await tag.fn({
-        _size: withMeasures[tag.id],
-        ...props,
-        children,
-      })
+      return render(handlers, await tag({ ...props, children }), withMeasures)
+    } else if (tag && tag.type) {
+      switch (tag.type) {
+        case "event-handlers":
+          Object.assign(handlers, tag.handlers)
+          return render(
+            handlers,
+            await tag.component({ ...props, children }),
+            withMeasures
+          )
 
-      return await render(
-        [r[0], { _size: tag.id, ...r[1] }, ...r.slice(2)],
-        withMeasures
-      )
+        case "with-measures": {
+          {
+            const { component, measure, property } = tag
+            const r = await component({
+              [property]: withMeasures[measure.id],
+              ...props,
+              children,
+            })
+
+            return render(
+              handlers,
+              [r[0], { _measure: measure, ...r[1] }, ...r.slice(2)],
+              withMeasures
+            )
+          }
+        }
+      }
     }
 
     let mapped = []
     for (const child of children) {
-      const tmp = await render(child, withMeasures)
+      const tmp = await render(handlers, child, withMeasures)
       mapped = [...mapped, ...tmp]
     }
 
@@ -390,6 +392,17 @@ const render = async (el, withMeasures) => {
 
 // Primitives
 const Button = ({ label, onClick }) => ["button", { onClick }, label]
+
+const Canvas = ({ width, height, children, ...rest }) => [
+  "canvas",
+  { width, height, "canvas-draw": children },
+]
+
+const eventHandlers = (component, handlers) => ({
+  type: "event-handlers",
+  component,
+  handlers,
+})
 
 const Fragment = ({ children }) => ["fragment", {}, ...children]
 
@@ -444,31 +457,68 @@ const Window = ({ children, id, onClose, title }) => [
   ["div", { class: "window-body" }, ...children],
 ]
 
-// Components
-const Editable = ({ state, lens }) => {
-  const value = view(state, grind(...lens))
+const withSize = (component) => {
+  const id = Math.random().toString(16).substring(2)
 
-  return !value._edit
-    ? [
-        "span",
-        {
-          onClick: { reason: "Editable/edit-user", lens },
-          style: "cursor: pointer;",
-        },
-        value,
-      ]
-    : [
-        "input",
-        {
-          autofocus: true,
-          "data-lpignore": true,
-          onChange: { reason: "Editable/update-user", lens },
-          onInput: { reason: "Editable/user-input", lens },
-          type: "text",
-          value: value.tmp,
-        },
-      ]
+  return {
+    type: "with-measures",
+    component,
+    measure: {
+      id,
+      properties: ["offsetWidth", "offsetHeight"],
+    },
+    property: "size",
+  }
 }
+
+// Components
+
+const Editable = eventHandlers(
+  ({ state, lens }) => {
+    const value = view(state, grind(...lens))
+
+    return !value._edit
+      ? [
+          "span",
+          {
+            onClick: { reason: "Editable/edit-user", lens },
+            style: "cursor: pointer;",
+          },
+          value,
+        ]
+      : [
+          "input",
+          {
+            autofocus: true,
+            "data-lpignore": true,
+            onChange: { reason: "Editable/update-user", lens },
+            onInput: { reason: "Editable/user-input", lens },
+            type: "text",
+            value: value.tmp,
+          },
+        ]
+  },
+  {
+    "Editable/edit-user": (state, event) =>
+      over(state, grind(...event.lens), (value) => ({
+        _edit: true,
+        tmp: value,
+      })),
+
+    "Editable/update-user": (state, event) =>
+      over(state, grind(...event.lens), (value) => value.tmp),
+
+    "Editable/user-input": (state, event) =>
+      over(state, grind(...event.lens), (value) => ({
+        ...value,
+        tmp: rawEvent.target.value
+          .split(/\s+/)
+          .filter((w) => w)
+          .map((w) => `${w[0].toUpperCase()}${w.substring(1)}`)
+          .join(" "),
+      })),
+  }
+)
 
 const List = async ({ lazyItems, state }) => {
   const items = await lazyItems()
@@ -494,14 +544,8 @@ const List = async ({ lazyItems, state }) => {
   ]
 }
 
-const withSize = (component) => {
-  const id = Math.random().toString(16).substring(2)
-
-  return { id, fn: async (...args) => component(...args) }
-}
-
 const Scroller = withSize(
-  ({ children, itemHeight, items, scrollLens, state, _size: size }) => {
+  ({ children, itemHeight, items, scrollLens, state, size }) => {
     const scrollTop = view(state, grind(...scrollLens)) ?? 0
 
     const start = Math.floor(scrollTop / itemHeight)
@@ -551,104 +595,129 @@ const Scroller = withSize(
   }
 )
 
-const App = ({ state }) => [
-  VGroup,
-  {},
-  ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
-  !state.showItems
-    ? [Button, { label: "Show items", onClick: { reason: "show-items" } }]
-    : [List, { lazyItems: state.lazyItems, state }],
-  [
-    HGroup,
-    { style: { height: "100px" } },
+const App = eventHandlers(
+  ({ state }) => [
+    VGroup,
+    {},
+    ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
+    !state.showItems
+      ? [Button, { label: "Show items", onClick: { reason: "show-items" } }]
+      : [List, { lazyItems: state.lazyItems, state }],
     [
-      "div",
-      {
-        style: { height: "100px", width: "100px" },
-        "with-drag": { color: "green" },
-      },
+      HGroup,
+      { style: { height: "100px" } },
       [
-        "svg",
-        { width: 100, height: 100 },
+        "div",
+        {
+          style: { height: "100px", width: "100px" },
+          "with-drag": { color: "green" },
+        },
         [
-          "rect",
-          {
-            x: 10,
-            y: 10,
-            width: 80,
-            height: 80,
-            stroke: "black",
-            fill: "green",
-          },
-        ],
-        ,
-      ],
-    ],
-    [
-      "div",
-      {
-        style: { height: "100px", width: "100px" },
-        "with-drop": { color: "white" },
-      },
-      [
-        "svg",
-        { width: 100, height: 100 },
-        [
-          "rect",
-          {
-            x: 10,
-            y: 10,
-            width: 80,
-            height: 80,
-            stroke: "black",
-            fill: "white",
-          },
+          "svg",
+          { width: 100, height: 100 },
+          [
+            "rect",
+            {
+              x: 10,
+              y: 10,
+              width: 80,
+              height: 80,
+              stroke: "black",
+              fill: "green",
+            },
+          ],
+          ,
         ],
       ],
+      [
+        "div",
+        {
+          style: { height: "100px", width: "100px" },
+          "with-drop": { color: "white" },
+        },
+        [
+          "svg",
+          { width: 100, height: 100 },
+          [
+            "rect",
+            {
+              x: 10,
+              y: 10,
+              width: 80,
+              height: 80,
+              stroke: "black",
+              fill: "white",
+            },
+          ],
+        ],
+      ],
+      [
+        "div",
+        {
+          style: { height: "100px", width: "100px" },
+          "with-drag": { color: "blue" },
+        },
+        [
+          "svg",
+          { width: 100, height: 100 },
+          [
+            "rect",
+            {
+              x: 10,
+              y: 10,
+              width: 80,
+              height: 80,
+              stroke: "black",
+              fill: "blue",
+            },
+          ],
+          ,
+        ],
+      ],
     ],
+    [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
+    !state.showWindow
+      ? null
+      : [
+          Window,
+          {
+            id: "riscos",
+            onClose: { reason: "footer-click" },
+            title: "RISC-OS",
+          },
+          "Two households, both alike in dignity",
+          ["br", {}],
+          "(In fair Verona, where we lay our scene),",
+          ["br", {}],
+          "From ancient grudge break to new mutiny,",
+          ["br", {}],
+          "Where civil blood makes civil hands unclean.",
+          ["br", {}],
+          "From forth the fatal loins of these two foes",
+          ["br", {}],
+          "A pair of star-crossed lovers take their life.",
+        ],
     [
-      "div",
-      {
-        style: { height: "100px", width: "100px" },
-        "with-drag": { color: "blue" },
-      },
+      Canvas,
+      { width: 100, height: 100 },
       [
         "svg",
-        { width: 100, height: 100 },
-        [
-          "rect",
-          {
-            x: 10,
-            y: 10,
-            width: 80,
-            height: 80,
-            stroke: "black",
-            fill: "blue",
-          },
-        ],
-        ,
+        {},
+        ["rect", { x: 10, y: 10, width: 80, height: 80, fill: "red" }],
       ],
     ],
   ],
-  [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
-  !state.showWindow
-    ? null
-    : [
-        Window,
-        { id: "riscos", onClose: { reason: "footer-click" }, title: "RISC-OS" },
-        "Two households, both alike in dignity",
-        ["br", {}],
-        "(In fair Verona, where we lay our scene),",
-        ["br", {}],
-        "From ancient grudge break to new mutiny,",
-        ["br", {}],
-        "Where civil blood makes civil hands unclean.",
-        ["br", {}],
-        "From forth the fatal loins of these two foes",
-        ["br", {}],
-        "A pair of star-crossed lovers take their life.",
-      ],
-]
+  {
+    "footer-click": (state) => ({
+      ...state,
+      showWindow: !state.showWindow,
+    }),
+    "show-items": (state) => ({
+      ...state,
+      showItems: true,
+    }),
+  }
+)
 
 const loadItems = async (itemCount) => {
   await sleep(2000)

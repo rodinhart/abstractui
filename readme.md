@@ -21,6 +21,8 @@
 
 **with-position** hooks up the relevant events to allow movable elements (such as a window). It updates DOM directly.
 
+**drag-n-drop** hooks up the relevant events to allow DnD.
+
 **measures** hooks up the relevant events to allow components to respond element measures (such as width and height).
 
 **onEvent** takes any events, updates the state and triggers a rerender cycle.
