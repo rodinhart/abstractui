@@ -10,7 +10,8 @@ clean up metalui, dejavue etc.
 DOM-diff performance
 use webworker to make sync
 svg2canvas
-eqal to include ref type
+eqal to include ref type, for memoizing components
+sub-abstractui implementation on canvas?
 
 How to use in WS
   hierarchy view?
