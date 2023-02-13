@@ -15,7 +15,7 @@
 
 **state** holds the application's essential state, including things like scroll position
 
-**markup** is produced by rendering the state. The render function is pure.
+**markup** is produced by rendering the state. The render function is pure. A component can also return event handlers.
 
 **DOM** is updated by comparing the markup to the previous version of the markup. Only differences are written to the DOM.
 
