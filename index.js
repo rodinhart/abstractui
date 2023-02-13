@@ -5,15 +5,17 @@ import { grind, over, view } from "./lib/lenses.js"
 
 TODOs
 
-Namespaces for events: core, user. Specify event handlers with HOC.
 Mark abstractui Vs target e.g. DOM/Canvas
 
 define serializable lenses?
 clean up metalui, dejavue etc.
 DOM-diff performance
 use webworker to make sync
+svg2canvas
+eqal to include ref type
 
 How to use in WS
+  hierarchy view?
 
 */
 
@@ -48,7 +50,7 @@ const attributesǃ = (node, props, onEventǃ) => {
 
       case "window-handle":
         node.onmousedown = (rawEvent) =>
-          onEventǃ({ ...val, reason: "window-handle" }, rawEvent)
+          onEventǃ({ ...val, reason: "kernel/window-handle" }, rawEvent)
         requestAnimationFrame(() => {
           const ancestor = document.getElementById(val.windowId)
           const bounds = ancestor.getBoundingClientRect()
@@ -59,16 +61,16 @@ const attributesǃ = (node, props, onEventǃ) => {
 
       case "with-scroll":
         node.onscroll = (rawEvent) =>
-          onEventǃ({ ...val, reason: "with-scroll" }, rawEvent)
+          onEventǃ({ ...val, reason: "kernel/with-scroll" }, rawEvent)
         break
 
       case "with-drag":
         node.setAttribute("draggable", "true")
         node.ondragstart = (rawEvent) => {
-          onEventǃ({ ...val, reason: "drag-start" }, rawEvent)
+          onEventǃ({ ...val, reason: "kernel/drag-start" }, rawEvent)
         }
         node.ondragend = (rawEvent) => {
-          onEventǃ({ reason: "drag-end" }, rawEvent)
+          onEventǃ({ reason: "kernel/drag-end" }, rawEvent)
         }
         break
 
@@ -77,7 +79,7 @@ const attributesǃ = (node, props, onEventǃ) => {
           rawEvent.preventDefault()
         }
         node.ondrop = (rawEvent) => {
-          onEventǃ({ ...val, reason: "drop" }, rawEvent)
+          onEventǃ({ ...val, reason: "kernel/drop" }, rawEvent)
         }
         break
 
@@ -116,25 +118,25 @@ const createApp = (initialState) => {
 
   const onEventǃ = async (event, rawEvent) => {
     switch (event.reason) {
-      case "drag-end":
+      case "kernel/drag-end":
         withDrag = undefined
         break
 
-      case "drag-start":
+      case "kernel/drag-start":
         withDrag = event
         break
 
-      case "drop":
+      case "kernel/drop":
         if (withDrag) {
           rawEvent.target.setAttribute("fill", withDrag.color)
         }
         break
 
-      case "init":
+      case "kernel/init":
         state = initialState
         break
 
-      case "with-measures":
+      case "kernel/with-measures":
         {
           let rerender = false
           for (const { id, node, properties } of event.measures) {
@@ -151,7 +153,7 @@ const createApp = (initialState) => {
         }
         break
 
-      case "window-handle":
+      case "kernel/window-handle":
         {
           const ancestor = document.getElementById(event.windowId)
           const bounds = ancestor.getBoundingClientRect()
@@ -162,7 +164,7 @@ const createApp = (initialState) => {
         }
         return
 
-      case "with-scroll":
+      case "kernel/with-scroll":
         state = over(
           state,
           grind(...event.lens),
@@ -194,12 +196,12 @@ const createApp = (initialState) => {
       onEventǃ,
     })
     prev = tmp
-    await onEventǃ({ reason: "with-measures", measures })
+    await onEventǃ({ reason: "kernel/with-measures", measures })
   }
 
   window.addEventListener("resize", () => {
     onEventǃ({
-      reason: "with-measures",
+      reason: "kernel/with-measures",
       measures: [
         {
           id: "WINDOW",
@@ -220,7 +222,7 @@ const createApp = (initialState) => {
     withPosition = undefined
   })
 
-  onEventǃ({ reason: "init" })
+  onEventǃ({ reason: "kernel/init" })
 }
 
 // Update DOM with differences from prev to els.
@@ -472,7 +474,6 @@ const withSize = (component) => {
 }
 
 // Components
-
 const Editable = eventHandlers(
   ({ state, lens }) => {
     const value = view(state, grind(...lens))
@@ -720,7 +721,7 @@ const App = eventHandlers(
 )
 
 const loadItems = async (itemCount) => {
-  await sleep(2000)
+  await sleep(1000)
 
   return new Array(itemCount)
     .fill(1)
