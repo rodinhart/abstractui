@@ -5,8 +5,6 @@ import { grind, over, view } from "./lib/lenses.js"
 
 TODOs
 
-Mark abstractui Vs target e.g. DOM/Canvas
-
 define serializable lenses?
 clean up metalui, dejavue etc.
 DOM-diff performance
@@ -128,9 +126,9 @@ const createApp = (initialState) => {
 
       case "kernel/drop":
         if (withDrag) {
-          rawEvent.target.setAttribute("fill", withDrag.color)
+          onEventǃ({ reason: "drop", source: withDrag, target: event })
         }
-        break
+        return
 
       case "kernel/init":
         state = initialState
@@ -174,7 +172,7 @@ const createApp = (initialState) => {
 
       default:
         if (eventHandlers[event.reason]) {
-          const newState = eventHandlers[event.reason](state)
+          const newState = eventHandlers[event.reason](state, event, rawEvent)
           if (newState === state) {
             return
           }
@@ -474,6 +472,29 @@ const withSize = (component) => {
 }
 
 // Components
+const Blob = ({ color, drd }) => [
+  "div",
+  {
+    style: { height: "100px", width: "100px" },
+    [drd]: { color },
+  },
+  [
+    "svg",
+    { width: 100, height: 100 },
+    [
+      "rect",
+      {
+        x: 10,
+        y: 10,
+        width: 80,
+        height: 80,
+        stroke: "black",
+        fill: color,
+      },
+    ],
+  ],
+]
+
 const Editable = eventHandlers(
   ({ state, lens }) => {
     const value = view(state, grind(...lens))
@@ -509,7 +530,7 @@ const Editable = eventHandlers(
     "Editable/update-user": (state, event) =>
       over(state, grind(...event.lens), (value) => value.tmp),
 
-    "Editable/user-input": (state, event) =>
+    "Editable/user-input": (state, event, rawEvent) =>
       over(state, grind(...event.lens), (value) => ({
         ...value,
         tmp: rawEvent.target.value
@@ -607,74 +628,9 @@ const App = eventHandlers(
     [
       HGroup,
       { style: { height: "100px" } },
-      [
-        "div",
-        {
-          style: { height: "100px", width: "100px" },
-          "with-drag": { color: "green" },
-        },
-        [
-          "svg",
-          { width: 100, height: 100 },
-          [
-            "rect",
-            {
-              x: 10,
-              y: 10,
-              width: 80,
-              height: 80,
-              stroke: "black",
-              fill: "green",
-            },
-          ],
-          ,
-        ],
-      ],
-      [
-        "div",
-        {
-          style: { height: "100px", width: "100px" },
-          "with-drop": { color: "white" },
-        },
-        [
-          "svg",
-          { width: 100, height: 100 },
-          [
-            "rect",
-            {
-              x: 10,
-              y: 10,
-              width: 80,
-              height: 80,
-              stroke: "black",
-              fill: "white",
-            },
-          ],
-        ],
-      ],
-      [
-        "div",
-        {
-          style: { height: "100px", width: "100px" },
-          "with-drag": { color: "blue" },
-        },
-        [
-          "svg",
-          { width: 100, height: 100 },
-          [
-            "rect",
-            {
-              x: 10,
-              y: 10,
-              width: 80,
-              height: 80,
-              stroke: "black",
-              fill: "blue",
-            },
-          ],
-          ,
-        ],
-      ],
+      [Blob, { color: "green", drd: "with-drag" }],
+      [Blob, { color: state.color, drd: "with-drop" }],
+      [Blob, { color: "blue", drd: "with-drag" }],
     ],
     [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
     !state.showWindow
@@ -709,6 +665,10 @@ const App = eventHandlers(
     ],
   ],
   {
+    drop: (state, event) => ({
+      ...state,
+      color: event.source.color,
+    }),
     "footer-click": (state) => ({
       ...state,
       showWindow: !state.showWindow,
@@ -730,6 +690,7 @@ const loadItems = async (itemCount) => {
 
 const init = eval("(" + (window.location.search.substring(7) || "{}") + ")")
 const app = createApp({
+  color: "white",
   lazyItems: memoPromise(() => loadItems(5e5)),
   user: "Nicolette",
   ...init,
