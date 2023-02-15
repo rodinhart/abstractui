@@ -15,6 +15,7 @@ sub-abstractui implementation on canvas?
 
 How to use in WS
   hierarchy view?
+  pie chart
 
 */
 
@@ -64,20 +65,13 @@ const attributesǃ = (node, props, onEventǃ) => {
         break
 
       case "with-drag":
-        node.setAttribute("draggable", "true")
-        node.ondragstart = (rawEvent) => {
+        node.onmousedown = (rawEvent) => {
           onEventǃ({ ...val, reason: "kernel/drag-start" }, rawEvent)
-        }
-        node.ondragend = (rawEvent) => {
-          onEventǃ({ reason: "kernel/drag-end" }, rawEvent)
         }
         break
 
       case "with-drop":
-        node.ondragover = (rawEvent) => {
-          rawEvent.preventDefault()
-        }
-        node.ondrop = (rawEvent) => {
+        node.onmouseup = (rawEvent) => {
           onEventǃ({ ...val, reason: "kernel/drop" }, rawEvent)
         }
         break
@@ -117,17 +111,16 @@ const createApp = (initialState) => {
 
   const onEventǃ = async (event, rawEvent) => {
     switch (event.reason) {
-      case "kernel/drag-end":
-        withDrag = undefined
-        break
-
       case "kernel/drag-start":
-        withDrag = event
+        withDrag = {
+          event,
+          dragElement: null,
+        }
         break
 
       case "kernel/drop":
-        if (withDrag) {
-          onEventǃ({ reason: "drop", source: withDrag, target: event })
+        if (withDrag && withDrag.dragElement) {
+          onEventǃ({ reason: "drop", source: withDrag.event, target: event })
         }
         return
 
@@ -195,8 +188,40 @@ const createApp = (initialState) => {
       onEventǃ,
     })
     prev = tmp
-    await onEventǃ({ reason: "kernel/with-measures", measures })
+    if (measures.length) {
+      await onEventǃ({ reason: "kernel/with-measures", measures })
+    }
   }
+
+  window.addEventListener("mousemove", (rawEvent) => {
+    if (withDrag) {
+      if (!withDrag.dragElement) {
+        withDrag.dragElement = document.getElementById("with-drag")
+        render({}, withDrag.event.dragImage, {}).then((r) => {
+          domǃ(withDrag.dragElement, r, [], { onEventǃ })
+        })
+      }
+
+      // make sure the drag image is not underneath the pointer, otherwise the mouseup won't
+      // fire on the drop target
+      withDrag.dragElement.style.left = rawEvent.clientX + 8
+      withDrag.dragElement.style.top = rawEvent.clientY - 8
+    } else if (withPosition) {
+      withPosition(rawEvent.clientX, rawEvent.clientY)
+    }
+  })
+
+  window.addEventListener("mouseup", (rawEvent) => {
+    if (withDrag) {
+      if (withDrag.dragElement) {
+        withDrag.dragElement.replaceChildren()
+      }
+
+      withDrag = undefined
+    }
+
+    withPosition = undefined
+  })
 
   window.addEventListener("resize", () => {
     onEventǃ({
@@ -209,16 +234,6 @@ const createApp = (initialState) => {
         },
       ],
     })
-  })
-
-  window.addEventListener("mousemove", (rawEvent) => {
-    if (withPosition) {
-      withPosition(rawEvent.clientX, rawEvent.clientY)
-    }
-  })
-
-  window.addEventListener("mouseup", () => {
-    withPosition = undefined
   })
 
   onEventǃ({ reason: "kernel/init" })
@@ -567,6 +582,68 @@ const List = async ({ lazyItems, state }) => {
   ]
 }
 
+const PALETTE = [
+  "#8dd3c7",
+  "#ffffb3",
+  "#bebada",
+  "#fb8072",
+  "#80b1d3",
+  "#fdb462",
+  "#b3de69",
+  "#fccde5",
+  "#d9d9d9",
+  "#bc80bd",
+  "#ccebc5",
+  "#ffed6f",
+]
+
+const sum = (xs, f) => xs.reduce((r, x) => r + (f ? f(x) : x), 0)
+
+const PieChart = ({ data, height, measure, width }) => {
+  const total = sum(data[measure])
+  const radius = Math.min(width, height) / 2
+
+  let a = 0
+
+  return [
+    "svg",
+    { height, width },
+    ...data[measure].map((val, i) => {
+      const da = (360 * val) / total
+
+      const t = [
+        "path",
+        {
+          d: `M 0 0 L 0 ${-radius} A ${radius} ${radius} 0 ${
+            da > 180 ? 1 : 0
+          } 1 ${radius * Math.sin((Math.PI * da) / 180)} ${
+            -radius * Math.cos((Math.PI * da) / 180)
+          }`,
+          fill: PALETTE[i % PALETTE.length],
+          "with-drag": {
+            type: "bucket",
+            dragImage: [
+              "div",
+              {
+                class: "drag-image",
+              },
+              `🪣 ${data.colorBy[i]}`,
+            ],
+            bucketKey: data.colorBy[i],
+            color: PALETTE[i % PALETTE.length],
+          },
+          transform: `translate(${radius} ${radius}) rotate(${a})`,
+          stroke: "white",
+        },
+      ]
+
+      a += da
+
+      return t
+    }),
+  ]
+}
+
 const Scroller = withSize(
   ({ children, itemHeight, items, scrollLens, state, size }) => {
     const scrollTop = view(state, grind(...scrollLens)) ?? 0
@@ -623,16 +700,50 @@ const App = eventHandlers(
     VGroup,
     {},
     ["h2", {}, "Welcome ", [Editable, { state, lens: ["user"] }], "!"],
+
+    [
+      HGroup,
+      {},
+      [
+        "div",
+        { style: { width: 200, height: 200 } },
+        [
+          PieChart,
+          {
+            data: {
+              colorBy: [
+                "Admin",
+                "Distribution",
+                "Executive",
+                "Finance",
+                "HR",
+                "IT Programme Delivery",
+                "Operations",
+                "Ops Programme Delivery",
+                "Programme Delivery",
+                "Project Delivery",
+                "Projects",
+                "Sales",
+                "(Blank)",
+              ],
+              _records__cnt: [
+                9, 47, 3, 22, 21, 195, 1, 385, 58, 212, 282, 44, 4,
+              ],
+            },
+            height: 200,
+            measure: "_records__cnt",
+            width: 200,
+          },
+        ],
+      ],
+
+      [Blob, { color: state.color, drd: "with-drop" }],
+    ],
+
     !state.showItems
       ? [Button, { label: "Show items", onClick: { reason: "show-items" } }]
       : [List, { lazyItems: state.lazyItems, state }],
-    [
-      HGroup,
-      { style: { height: "100px" } },
-      [Blob, { color: "green", drd: "with-drag" }],
-      [Blob, { color: state.color, drd: "with-drop" }],
-      [Blob, { color: "blue", drd: "with-drag" }],
-    ],
+
     [Button, { label: "Footer", onClick: { reason: "footer-click" } }],
     !state.showWindow
       ? null

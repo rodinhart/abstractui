@@ -21,6 +21,13 @@
         user-select: none;
       }
 
+      .drag-image {
+        background-color: var(--page-color);
+        border: 1px solid var(--border-color);
+        box-shadow: 3px 2px 3px #0003;
+        padding: var(--text-padding);
+      }
+
       .window {
         background-color: var(--page-color);
         border: 1px solid var(--border-color);
@@ -52,6 +59,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="with-drag" style="position: fixed"></div>
     <script src="index.js" type="module"></script>
   </body>
 </html>
