@@ -597,51 +597,179 @@ const PALETTE = [
   "#ffed6f",
 ]
 
+const rad = (d) => (Math.PI * d) / 180
 const sum = (xs, f) => xs.reduce((r, x) => r + (f ? f(x) : x), 0)
 
 const PieChart = ({ data, height, measure, width }) => {
+  const FONT_SIZE = 11
+
   const total = sum(data[measure])
-  const radius = Math.min(width, height) / 2
+  const das = data[measure].map((val) => 360 * (val / total))
+  const angles = das.reduce(
+    (r, da) => {
+      r.angles.push(r.acc)
 
-  let a = 0
+      r.acc += da
 
-  return [
-    "svg",
-    { height, width },
-    ...data[measure].map((val, i) => {
-      const da = (360 * val) / total
+      return r
+    },
+    {
+      acc: 0,
+      angles: [],
+    }
+  ).angles
 
-      const t = [
+  const size = Math.min(width, height) / 2
+  const radius = 0.7 * size
+
+  const segments = angles.map((angle, index) => [
+    "path",
+    {
+      d: `M 0 0 L 0 ${-radius} A ${radius} ${radius} 0 ${
+        das[index] > 180 ? 1 : 0
+      } 1 ${radius * Math.sin(rad(das[index]))} ${
+        -radius * Math.cos(rad(das[index]))
+      }`,
+      fill: PALETTE[index % PALETTE.length],
+      "with-drag": {
+        type: "bucket",
+        dragImage: [
+          "div",
+          {
+            class: "drag-image",
+          },
+          `🪣 ${data.colorBy[index]}`,
+        ],
+        bucketKey: data.colorBy[index],
+        color: PALETTE[index % PALETTE.length],
+      },
+      transform: `translate(${width / 2} ${height / 2}) rotate(${angle})`,
+      stroke: "white",
+    },
+  ])
+
+  const [left, right] = angles.reduce(
+    (r, angle, index) => {
+      const a = angle + das[index] / 2
+      const x = width / 2 + (radius + 20) * Math.sin(rad(a))
+      const y = height / 2 - (radius + 20) * Math.cos(rad(a))
+
+      if (a > 180) {
+        r[0].unshift({
+          index,
+          textAnchor: "end",
+          x,
+          y,
+        })
+      } else {
+        r[1].push({
+          index,
+          textAnchor: "start",
+          x,
+          y,
+        })
+      }
+
+      return r
+    },
+    [[], []]
+  )
+
+  const prune = (xs) => {
+    while (xs.length > 0 && FONT_SIZE * xs.length > height) {
+      let smallest = 0
+      for (let i = 1; i < xs.length; i += 1) {
+        if (das[xs[i].index] <= das[xs[smallest].index]) {
+          smallest = i
+        }
+      }
+
+      xs.splice(smallest, 1)
+    }
+  }
+
+  prune(left)
+  prune(right)
+
+  const distribute = (xs, sx) => {
+    let max = 32
+    while (
+      max > 0 &&
+      xs.some(
+        ({ y }, i) =>
+          y < 0 ||
+          y + FONT_SIZE > height ||
+          (i !== 0 && xs[i - 1].y > y - FONT_SIZE)
+      )
+    ) {
+      const spacing = (height - xs.length * FONT_SIZE) / (xs.length - 1)
+      for (let j = 0; j < xs.length; j += 1) {
+        const newY = j * (FONT_SIZE + spacing) + FONT_SIZE
+        xs[j].y = 0.9 * xs[j].y + 0.1 * newY
+        xs[j].x =
+          width / 2 +
+          sx *
+            (radius + 20) *
+            Math.sqrt(1 - ((xs[j].y - height / 2) / (height / 2)) ** 2)
+      }
+
+      max -= 1
+    }
+  }
+
+  distribute(left, -1)
+  distribute(right, 1)
+
+  const labels = [...left, ...right].flatMap(({ index, textAnchor, x, y }) => {
+    const canvas = document.createElement("canvas")
+    const g = canvas.getContext("2d")
+    g.font = `${FONT_SIZE}px Arial`
+    const w = textAnchor === "end" ? x : width - x
+    const label = data.colorBy[index]
+    let len = label.length
+    while (
+      len > 3 &&
+      g.measureText(
+        len === label.length ? label : label.substring(0, len) + "..."
+      ).width > w
+    ) {
+      len -= 1
+    }
+
+    const text = len === label.length ? label : label.substring(0, len) + "..."
+
+    const x1 = x + (textAnchor === "end" ? 4 : -4)
+    const y1 = y - 0.4 * FONT_SIZE
+    const x2 =
+      width / 2 + radius * Math.sin(rad(angles[index] + das[index] / 2))
+    const y2 =
+      height / 2 - radius * Math.cos(rad(angles[index] + das[index] / 2))
+
+    return [
+      [
+        "text",
+        {
+          "font-family": "Arial",
+          "font-size": FONT_SIZE,
+          "text-anchor": textAnchor,
+          x,
+          y,
+        },
+        ...(len === label.length ? [] : [["title", {}, label]]),
+        text,
+      ],
+      [
         "path",
         {
-          d: `M 0 0 L 0 ${-radius} A ${radius} ${radius} 0 ${
-            da > 180 ? 1 : 0
-          } 1 ${radius * Math.sin((Math.PI * da) / 180)} ${
-            -radius * Math.cos((Math.PI * da) / 180)
-          }`,
-          fill: PALETTE[i % PALETTE.length],
-          "with-drag": {
-            type: "bucket",
-            dragImage: [
-              "div",
-              {
-                class: "drag-image",
-              },
-              `🪣 ${data.colorBy[i]}`,
-            ],
-            bucketKey: data.colorBy[i],
-            color: PALETTE[i % PALETTE.length],
-          },
-          transform: `translate(${radius} ${radius}) rotate(${a})`,
-          stroke: "white",
+          d: `M ${x1} ${y1} L ${0.8 * x1 + 0.2 * x2} ${y1} L ${x2} ${y2}`,
+          fill: "none",
+          stroke: "#888888",
         },
-      ]
+      ],
+    ]
+  })
 
-      a += da
-
-      return t
-    }),
-  ]
+  return ["svg", { height, width }, ...segments, ...labels]
 }
 
 const Scroller = withSize(
@@ -695,6 +823,8 @@ const Scroller = withSize(
   }
 )
 
+// const Chart
+
 const App = eventHandlers(
   ({ state }) => [
     VGroup,
@@ -706,7 +836,7 @@ const App = eventHandlers(
       {},
       [
         "div",
-        { style: { width: 200, height: 200 } },
+        { style: { width: 600, height: 400 } },
         [
           PieChart,
           {
@@ -730,9 +860,9 @@ const App = eventHandlers(
                 9, 47, 3, 22, 21, 195, 1, 385, 58, 212, 282, 44, 4,
               ],
             },
-            height: 200,
+            height: 400 / 1,
             measure: "_records__cnt",
-            width: 200,
+            width: 600 / 1,
           },
         ],
       ],
