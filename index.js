@@ -673,7 +673,7 @@ const numberToString = (n, max) =>
  * There is margin between the axis and the labels
  * There is margin between the labels and the left and bottom of the chart
  */
-const LineChart = ({ className, data, height, width }) => {
+const LineChart = ({ className, data, height, maxValue, minValue, width }) => {
   // constants
   const FONTSIZE = 11
   const LINESPACING = 1.2
@@ -690,7 +690,10 @@ const LineChart = ({ className, data, height, width }) => {
   const h = height - 4 * MARGIN - axisHeight
 
   // determine size needed, or allowed, for y-axis labels
-  const range = [Math.min(0, ...data.value), Math.max(...data.value)]
+  const range = [
+    minValue ?? Math.min(0, ...data.value),
+    maxValue ?? Math.max(...data.value),
+  ]
   const targetIntervals = Math.min(10, Math.floor((h / FONTSIZE) * LINESPACING)) // Based on how much space I have, but no more than 10
   const [niceIntervals, [niceMin, niceMax]] = findNiceIntervals(
     targetIntervals,
@@ -790,6 +793,21 @@ const LineChart = ({ className, data, height, width }) => {
   const markers = data.value.flatMap((val, i, arr) => {
     const x = toX(i)
     const y = toY(val)
+
+    if (data.marker && data.marker[i] === "BAR") {
+      return [
+        [
+          "rect", // use path?
+          {
+            fill: data.color[i],
+            x: i * dx + 2,
+            y: val < 0 ? toY(0) : y,
+            width: dx - 4,
+            height: Math.abs(val) * sy,
+          },
+        ],
+      ]
+    }
 
     const line =
       (i + 1) % data.category.length === 0
@@ -1147,6 +1165,10 @@ const App = eventHandlers(
               ...data["_records__cnt"],
               ...data["_records__cnt"].map((val) => val + 150).reverse(),
             ].map((val) => String(val)),
+            marker: [
+              ...data["_records__cnt"].map(() => "BAR"),
+              ...data["_records__cnt"].map(() => "LINE"),
+            ],
             title: [
               ...data["_records__cnt"],
               ...data["_records__cnt"].map((val) => val + 150).reverse(),
