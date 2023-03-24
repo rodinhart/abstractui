@@ -668,14 +668,12 @@ const numberToString = (n, max) =>
  *            A  B  C
  * ```
  *
- * There is margin above and to the right of the chart, to avoid markes being clipped
+ * There is 2X margin above of the chart, to avoid marks or value labels being clipped
+ * There is 2X margin to the right of the chart, to avoid marks or value labels being clipped
  * There is margin between the axis and the labels
  * There is margin between the labels and the left and bottom of the chart
  */
 const LineChart = ({ className, data, height, width }) => {
-  // TODO
-  // multiple series (by color)
-
   // constants
   const FONTSIZE = 11
   const LINESPACING = 1.2
@@ -689,7 +687,7 @@ const LineChart = ({ className, data, height, width }) => {
   )
 
   // determine plot area height
-  const h = height - 3 * MARGIN - axisHeight
+  const h = height - 4 * MARGIN - axisHeight
 
   // determine size needed, or allowed, for y-axis labels
   const range = [Math.min(0, ...data.value), Math.max(...data.value)]
@@ -713,9 +711,9 @@ const LineChart = ({ className, data, height, width }) => {
   )
 
   // determine plot area width
-  const w = width - 3 * MARGIN - axisWidth
-  const dx = w / data.value.length
-  const toX = (i) => (i + 0.5) * dx
+  const w = width - 4 * MARGIN - axisWidth
+  const dx = w / data.category.length
+  const toX = (i) => ((i % data.category.length) + 0.5) * dx
 
   // construct y-axis labels
   const sy = h / (niceMax - niceMin)
@@ -794,7 +792,7 @@ const LineChart = ({ className, data, height, width }) => {
     const y = toY(val)
 
     const line =
-      i + 1 === arr.length
+      (i + 1) % data.category.length === 0
         ? []
         : [
             [
@@ -853,7 +851,7 @@ const LineChart = ({ className, data, height, width }) => {
     [
       "g",
       {
-        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${MARGIN})`,
+        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${2 * MARGIN})`,
       },
       // y-axis
       [
@@ -1140,16 +1138,26 @@ const App = eventHandlers(
         LineChart,
         {
           data: {
-            color: data["_records__cnt"].map(
-              (_, i) => PALETTE[i % PALETTE.length]
-            ),
+            color: [
+              ...data["_records__cnt"].map(() => PALETTE[0]),
+              ...data["_records__cnt"].map(() => PALETTE[3]),
+            ],
             category: data["colorBy"],
-            label: data["_records__cnt"].map((val) => String(val)),
-            title: data["_records__cnt"].map(
+            label: [
+              ...data["_records__cnt"],
+              ...data["_records__cnt"].map((val) => val + 150).reverse(),
+            ].map((val) => String(val)),
+            title: [
+              ...data["_records__cnt"],
+              ...data["_records__cnt"].map((val) => val + 150).reverse(),
+            ].map(
               (val, i) =>
                 `colorBy: ${data["colorBy"][i]}\nTotal records: ${val}`
             ),
-            value: data["_records__cnt"],
+            value: [
+              ...data["_records__cnt"],
+              ...data["_records__cnt"].map((val) => val + 150).reverse(),
+            ],
           },
           height: 400 / 1,
           width: 600 / 1,
