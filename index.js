@@ -629,9 +629,12 @@ const truncateText = (s, w) => {
 
 const findNiceIntervals = (target, range) => {
   const diff = range[1] - range[0]
-  const order = 10 ** Math.floor(Math.log10(diff)) / 5
-  const n = Math.ceil(diff / order)
+  // define nice step, a fifth of the order of number we are working with
+  const step = 10 ** Math.floor(Math.log10(diff)) / 5
+  // number of nice steps in our range  5 <= n <= 50
+  const n = Math.ceil(diff / step)
 
+  // try to find a factor of n closest to our target number of intervals.
   for (let t = n; t < n + 6; t++) {
     const factors = []
     for (let i = 1; i <= Math.sqrt(t); i++) {
@@ -648,8 +651,13 @@ const findNiceIntervals = (target, range) => {
     }
 
     if (best > 1) {
-      const niceMin = Math.floor(range[0] / order) * order
-      return [best, [niceMin, niceMin + t * order]]
+      // bestStep will be a nice number as well, because best is a factor of t
+      const bestStep = step * (t / best)
+      // calculate niceMin and niceMax separately to ensure zero is included
+      const niceMin = Math.floor(range[0] / bestStep) * bestStep
+      const niceMax = Math.ceil(range[1] / bestStep) * bestStep
+
+      return [(niceMax - niceMin) / bestStep, [niceMin, niceMax]]
     }
   }
 
@@ -661,10 +669,24 @@ const numberToString = (n, max) =>
 
 // chart constants
 const FONTSIZE = 11
-const LINESPACING = 1.2
-const MARGIN = 8
+const LINESPACING = 1.3
+const MARGIN = 12
 const MARKER = 4
 
+/**
+ * ```
+ *        4 |
+ *        3 |
+ *        2 |
+ *        1 |________
+ *            A  B  C
+ * ```
+ *
+ * There is margin above of the chart, to avoid marks or value labels being clipped
+ * There is margin to the right of the chart, to avoid marks or value labels being clipped
+ * There is margin between the axis and the labels
+ * There is margin between the labels and the left and bottom of the chart
+ */
 const VerticalChart = ({
   className,
   children,
@@ -681,14 +703,14 @@ const VerticalChart = ({
   )
 
   // determine plot area height
-  const h = height - 4 * MARGIN - axisHeight
+  const h = height - 3 * MARGIN - axisHeight
 
   // determine size needed, or allowed, for y-axis labels
   const range = [
     minValue ?? Math.min(0, ...data.value),
     maxValue ?? Math.max(0, ...data.value),
   ]
-  const targetIntervals = Math.min(10, Math.floor((h / FONTSIZE) * LINESPACING)) // Based on how much space I have, but no more than 10
+  const targetIntervals = Math.min(9, Math.floor(h / (FONTSIZE * LINESPACING))) // Based on how much space I have, but no more than 9
   const [niceIntervals, [niceMin, niceMax]] = findNiceIntervals(
     targetIntervals,
     range
@@ -708,7 +730,7 @@ const VerticalChart = ({
   )
 
   // determine plot area width
-  const w = width - 4 * MARGIN - axisWidth
+  const w = width - 3 * MARGIN - axisWidth
   const dx = w / data.category.length
   const toX = (i) => ((i % data.category.length) + 0.5) * dx
 
@@ -753,9 +775,9 @@ const VerticalChart = ({
       {
         stroke: "#aaaaaa",
         x1: (i + 1) * dx,
-        y1: h,
+        y1: toY(0),
         x2: (i + 1) * dx,
-        y2: h + MARGIN / 2,
+        y2: toY(0) + MARGIN / 3,
       },
     ]
 
@@ -796,8 +818,17 @@ const VerticalChart = ({
     [
       "g",
       {
-        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${2 * MARGIN})`,
+        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${MARGIN})`,
       },
+
+      ...children.map((Child) => {
+        if (!Array.isArray(Child)) {
+          return Child
+        }
+
+        return [Child[0], { ...Child[1], dx, toX, toY }, ...Child.slice(2)]
+      }),
+
       // y-axis
       [
         "line",
@@ -809,26 +840,20 @@ const VerticalChart = ({
           y2: h,
         },
       ],
+      ...ylabels,
+
       // x-axis
       [
         "line",
         {
           stroke: "#888888",
           x1: 0,
-          y1: h,
+          y1: toY(0),
           x2: w,
-          y2: h,
+          y2: toY(0),
         },
       ],
-      ...ylabels,
       ...xlabels,
-      ...children.map((Child) => {
-        if (!Array.isArray(Child)) {
-          return Child
-        }
-
-        return [Child[0], { ...Child[1], dx, toX, toY }, ...Child.slice(2)]
-      }),
     ],
   ]
 }
@@ -836,11 +861,11 @@ const VerticalChart = ({
 const BarArea = ({ data, dx, toX, toY }) => {
   const numberOfSeries = Math.floor(data.value.length / data.category.length)
   const perBar = Math.max(0, (dx - MARGIN) / numberOfSeries)
+  const toXAdjusted = (i) =>
+    toX(i) - (dx - MARGIN) / 2 + Math.floor(i / data.category.length) * perBar
 
   const bars = data.value.map((val, i) => {
-    const serie = Math.floor(i / data.category.length)
-
-    const x = toX(i) - (dx - MARGIN) / 2 + serie * perBar
+    const x = toXAdjusted(i)
     const y1 = val >= 0 ? toY(val) : toY(0)
     const y2 = val >= 0 ? toY(0) : toY(val)
 
@@ -857,14 +882,36 @@ const BarArea = ({ data, dx, toX, toY }) => {
     ]
   })
 
-  return ["g", {}, ...bars]
+  const valueLabels = !data.label
+    ? []
+    : data.value.flatMap((val, i) =>
+        measureText(data.label[i]) >= perBar
+          ? []
+          : [
+              [
+                "text",
+                {
+                  "font-family": "Arial",
+                  "font-size": FONTSIZE,
+                  "paint-order": "stroke",
+                  stroke: "#ffffff",
+                  "stroke-width": 2,
+                  "text-anchor": "middle",
+                  x: toXAdjusted(i) + perBar / 2,
+                  y: toY(data.value[i]) + (val >= 0 ? -FONTSIZE / 2 : FONTSIZE),
+                },
+                data.label[i],
+              ],
+            ]
+      )
+
+  return ["g", {}, ...bars, ...valueLabels]
 }
 
 const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
   const negY = negValues.slice()
   const posY = posValues.slice()
-  const bars = data.value.map((val, i) => {
-    const x = toX(i) - (dx - MARGIN) / 2
+  const bars = data.value.flatMap((val, i) => {
     let y1, y2
     if (val >= 0) {
       y1 = toY(posY[i % data.category.length])
@@ -877,19 +924,61 @@ const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
     }
 
     return [
-      "rect",
-      {
-        fill: data.color[i],
-        x: x,
-        y: y1,
-        width: dx - MARGIN,
-        height: y2 - y1,
-      },
-      ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
+      [
+        "rect",
+        {
+          fill: data.color[i],
+          x: toX(i) - (dx - MARGIN) / 2,
+          y: y1,
+          width: dx - MARGIN,
+          height: y2 - y1,
+        },
+        ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
+      ],
+      ...(y2 - y1 < (FONTSIZE - 2) * LINESPACING
+        ? []
+        : [
+            [
+              "text",
+              {
+                "font-family": "Arial",
+                "font-size": FONTSIZE - 2,
+                "text-anchor": "middle",
+                x: toX(i),
+                y: (y1 + y2) / 2 + 0.3 * FONTSIZE,
+              },
+              String(val), // format!
+            ],
+          ]),
     ]
   })
 
-  return ["g", {}, ...bars]
+  const valueLabels = !data.label
+    ? []
+    : data.category.map((_, i) => {
+        const negValue = negValues[i % data.category.length]
+        const posValue = posValues[i % data.category.length]
+        const val = posValue + negValue
+        const y =
+          val >= 0 ? toY(posValue) - FONTSIZE / 2 : toY(negValue) + FONTSIZE
+
+        return [
+          "text",
+          {
+            "font-family": "Arial",
+            "font-size": FONTSIZE,
+            "paint-order": "stroke",
+            stroke: "#ffffff",
+            "stroke-width": 2,
+            "text-anchor": "middle",
+            x: toX(i),
+            y,
+          },
+          String(val), // format!
+        ]
+      })
+
+  return ["g", {}, ...bars, ...valueLabels]
 }
 
 const LineArea = ({ data, toX, toY }) => {
@@ -930,7 +1019,7 @@ const LineArea = ({ data, toX, toY }) => {
 
   const valueLabels = !data.label
     ? []
-    : data.label.map((label, i) => [
+    : data.value.map((_, i) => [
         "text",
         {
           "font-family": "Arial",
@@ -942,37 +1031,16 @@ const LineArea = ({ data, toX, toY }) => {
           x: toX(i),
           y: toY(data.value[i]) - FONTSIZE / 2,
         },
-        label,
+        data.label[i],
       ])
 
   return ["g", {}, ...markers, ...valueLabels]
 }
 
-/**
- * ```
- *        4 |       *
- *        3 |
- *        2 | *
- *        1 |____*___
- *            A  B  C
- * ```
- *
- * There is 2X margin above of the chart, to avoid marks or value labels being clipped
- * There is 2X margin to the right of the chart, to avoid marks or value labels being clipped
- * There is margin between the axis and the labels
- * There is margin between the labels and the left and bottom of the chart
- */
 const LineChart = ({ data, ...props }) => {
   return [VerticalChart, { data, ...props }, [LineArea, { data }]]
 }
 
-/**
- *    4 |        _
- *    3 |       | |   _
- *    2 |   _   | |  | |
- *    1 |__| |__| |__| |__
- *          A    B    C
- */
 const BarChart = ({ data, ...props }) => {
   return [VerticalChart, { data, ...props }, [BarArea, { data }]]
 }
@@ -1278,12 +1346,34 @@ const App = eventHandlers(
       "div",
       { style: { width: 600, height: 400 } },
       [
-        LineChart,
+        VerticalChart,
         {
           data: barLineData,
           height: 400 / 1,
           width: 600 / 1,
         },
+        [
+          BarArea,
+          {
+            data: {
+              ...barLineData,
+              color: barLineData.color.slice(barLineData.category.length),
+              label: barLineData.label.slice(barLineData.category.length),
+              value: barLineData.value.slice(barLineData.category.length),
+            },
+          },
+        ],
+        [
+          LineArea,
+          {
+            data: {
+              ...barLineData,
+              color: barLineData.color.slice(0, barLineData.category.length),
+              label: barLineData.label.slice(0, barLineData.category.length),
+              value: barLineData.value.slice(0, barLineData.category.length),
+            },
+          },
+        ],
       ],
     ],
 
@@ -1291,7 +1381,7 @@ const App = eventHandlers(
       "div",
       { style: { width: 600, height: 400 } },
       [
-        StackedBarChart,
+        BarChart,
         {
           data: barLineData,
           height: 400 / 1,
