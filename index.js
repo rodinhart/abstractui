@@ -794,21 +794,6 @@ const LineChart = ({ className, data, height, maxValue, minValue, width }) => {
     const x = toX(i)
     const y = toY(val)
 
-    if (data.marker && data.marker[i] === "BAR") {
-      return [
-        [
-          "rect", // use path?
-          {
-            fill: data.color[i],
-            x: i * dx + 2,
-            y: val < 0 ? toY(0) : y,
-            width: dx - 4,
-            height: Math.abs(val) * sy,
-          },
-        ],
-      ]
-    }
-
     const line =
       (i + 1) % data.category.length === 0
         ? []
@@ -1165,10 +1150,6 @@ const App = eventHandlers(
               ...data["_records__cnt"],
               ...data["_records__cnt"].map((val) => val + 150).reverse(),
             ].map((val) => String(val)),
-            marker: [
-              ...data["_records__cnt"].map(() => "BAR"),
-              ...data["_records__cnt"].map(() => "LINE"),
-            ],
             title: [
               ...data["_records__cnt"],
               ...data["_records__cnt"].map((val) => val + 150).reverse(),
