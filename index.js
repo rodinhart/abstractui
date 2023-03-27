@@ -686,7 +686,7 @@ const VerticalChart = ({
   // determine size needed, or allowed, for y-axis labels
   const range = [
     minValue ?? Math.min(0, ...data.value),
-    maxValue ?? Math.max(...data.value),
+    maxValue ?? Math.max(0, ...data.value),
   ]
   const targetIntervals = Math.min(10, Math.floor((h / FONTSIZE) * LINESPACING)) // Based on how much space I have, but no more than 10
   const [niceIntervals, [niceMin, niceMax]] = findNiceIntervals(
@@ -860,6 +860,38 @@ const BarArea = ({ data, dx, toX, toY }) => {
   return ["g", {}, ...bars]
 }
 
+const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
+  const negY = negValues.slice()
+  const posY = posValues.slice()
+  const bars = data.value.map((val, i) => {
+    const x = toX(i) - (dx - MARGIN) / 2
+    let y1, y2
+    if (val >= 0) {
+      y1 = toY(posY[i % data.category.length])
+      posY[i % data.category.length] -= val
+      y2 = toY(posY[i % data.category.length])
+    } else {
+      y2 = toY(negY[i % data.category.length])
+      negY[i % data.category.length] -= val
+      y1 = toY(negY[i % data.category.length])
+    }
+
+    return [
+      "rect",
+      {
+        fill: data.color[i],
+        x: x,
+        y: y1,
+        width: dx - MARGIN,
+        height: y2 - y1,
+      },
+      ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
+    ]
+  })
+
+  return ["g", {}, ...bars]
+}
+
 const LineArea = ({ data, toX, toY }) => {
   const markers = data.value.flatMap((val, i, arr) => {
     const x = toX(i)
@@ -943,6 +975,30 @@ const LineChart = ({ data, ...props }) => {
  */
 const BarChart = ({ data, ...props }) => {
   return [VerticalChart, { data, ...props }, [BarArea, { data }]]
+}
+
+const StackedBarChart = ({ data, ...props }) => {
+  const posValues = data.category.map(() => 0)
+  const negValues = data.category.map(() => 0)
+  for (let i = 0; i < data.value.length; i++) {
+    const val = data.value[i]
+    if (val >= 0) {
+      posValues[i % data.category.length] += val
+    } else {
+      negValues[i % data.category.length] += val
+    }
+  }
+
+  return [
+    VerticalChart,
+    {
+      data,
+      ...props,
+      maxValue: Math.max(...posValues),
+      minValue: Math.min(...negValues),
+    },
+    [StackedArea, { data, negValues, posValues }],
+  ]
 }
 
 const PieChart = ({ data, height, measure, width }) => {
@@ -1194,12 +1250,12 @@ const barLineData = {
   ],
   category: data["colorBy"],
   label: [
-    ...data["_records__cnt"],
     ...data["_records__cnt"].map((val) => val - 88).reverse(),
+    ...data["_records__cnt"],
   ].map((val) => String(val)),
   title: [
-    ...data["_records__cnt"],
     ...data["_records__cnt"].map((val) => val - 88).reverse(),
+    ...data["_records__cnt"],
   ].map(
     (val, i) =>
       `colorBy: ${
@@ -1207,8 +1263,8 @@ const barLineData = {
       }\nTotal records: ${val}`
   ),
   value: [
-    ...data["_records__cnt"],
     ...data["_records__cnt"].map((val) => val - 88).reverse(),
+    ...data["_records__cnt"],
   ],
 }
 
@@ -1235,7 +1291,7 @@ const App = eventHandlers(
       "div",
       { style: { width: 600, height: 400 } },
       [
-        BarChart,
+        StackedBarChart,
         {
           data: barLineData,
           height: 400 / 1,
