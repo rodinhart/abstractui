@@ -659,27 +659,21 @@ const findNiceIntervals = (target, range) => {
 const numberToString = (n, max) =>
   String(Number(n.toPrecision(1 + Math.floor(Math.abs(Math.log10(max))))))
 
-/**
- * ```
- *        4 |       *
- *        3 |
- *        2 | *
- *        1 |____*___
- *            A  B  C
- * ```
- *
- * There is 2X margin above of the chart, to avoid marks or value labels being clipped
- * There is 2X margin to the right of the chart, to avoid marks or value labels being clipped
- * There is margin between the axis and the labels
- * There is margin between the labels and the left and bottom of the chart
- */
-const LineChart = ({ className, data, height, maxValue, minValue, width }) => {
-  // constants
-  const FONTSIZE = 11
-  const LINESPACING = 1.2
-  const MARKER = 4
-  const MARGIN = 8
+// chart constants
+const FONTSIZE = 11
+const LINESPACING = 1.2
+const MARGIN = 8
+const MARKER = 4
 
+const VerticalChart = ({
+  className,
+  children,
+  data,
+  height,
+  maxValue,
+  minValue,
+  width,
+}) => {
   // determine size needed, or allowed, for x-axis labels
   const axisHeight = Math.min(
     0.4 * height,
@@ -790,6 +784,83 @@ const LineChart = ({ className, data, height, maxValue, minValue, width }) => {
     ]
   })
 
+  return [
+    "svg",
+    {
+      xmlns: "http://www.w3.org/2000/svg",
+      className,
+      viewBox: `0 0 ${width} ${height}`,
+      "ov-hint": "svg-image",
+    },
+    ["rect", { x: 0, y: 0, width, height, fill: "none", stroke: "#dddddd" }],
+    [
+      "g",
+      {
+        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${2 * MARGIN})`,
+      },
+      // y-axis
+      [
+        "line",
+        {
+          stroke: "#888888",
+          x1: 0,
+          y1: 0,
+          x2: 0,
+          y2: h,
+        },
+      ],
+      // x-axis
+      [
+        "line",
+        {
+          stroke: "#888888",
+          x1: 0,
+          y1: h,
+          x2: w,
+          y2: h,
+        },
+      ],
+      ...ylabels,
+      ...xlabels,
+      ...children.map((Child) => {
+        if (!Array.isArray(Child)) {
+          return Child
+        }
+
+        return [Child[0], { ...Child[1], dx, toX, toY }, ...Child.slice(2)]
+      }),
+    ],
+  ]
+}
+
+const BarArea = ({ data, dx, toX, toY }) => {
+  const numberOfSeries = Math.floor(data.value.length / data.category.length)
+  const perBar = Math.max(0, (dx - MARGIN) / numberOfSeries)
+
+  const bars = data.value.map((val, i) => {
+    const serie = Math.floor(i / data.category.length)
+
+    const x = toX(i) - (dx - MARGIN) / 2 + serie * perBar
+    const y1 = val >= 0 ? toY(val) : toY(0)
+    const y2 = val >= 0 ? toY(0) : toY(val)
+
+    return [
+      "rect",
+      {
+        fill: data.color[i],
+        x: x,
+        y: y1,
+        width: perBar,
+        height: y2 - y1,
+      },
+      ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
+    ]
+  })
+
+  return ["g", {}, ...bars]
+}
+
+const LineArea = ({ data, toX, toY }) => {
   const markers = data.value.flatMap((val, i, arr) => {
     const x = toX(i)
     const y = toY(val)
@@ -842,48 +913,36 @@ const LineChart = ({ className, data, height, maxValue, minValue, width }) => {
         label,
       ])
 
-  return [
-    "svg",
-    {
-      xmlns: "http://www.w3.org/2000/svg",
-      className,
-      viewBox: `0 0 ${width} ${height}`,
-      "ov-hint": "svg-image",
-    },
-    ["rect", { x: 0, y: 0, width, height, fill: "none", stroke: "#dddddd" }],
-    [
-      "g",
-      {
-        transform: `translate(${MARGIN + axisWidth + MARGIN}, ${2 * MARGIN})`,
-      },
-      // y-axis
-      [
-        "line",
-        {
-          stroke: "#888888",
-          x1: 0,
-          y1: 0,
-          x2: 0,
-          y2: h,
-        },
-      ],
-      // x-axis
-      [
-        "line",
-        {
-          stroke: "#888888",
-          x1: 0,
-          y1: h,
-          x2: w,
-          y2: h,
-        },
-      ],
-      ...ylabels,
-      ...xlabels,
-      ...markers,
-      ...valueLabels,
-    ],
-  ]
+  return ["g", {}, ...markers, ...valueLabels]
+}
+
+/**
+ * ```
+ *        4 |       *
+ *        3 |
+ *        2 | *
+ *        1 |____*___
+ *            A  B  C
+ * ```
+ *
+ * There is 2X margin above of the chart, to avoid marks or value labels being clipped
+ * There is 2X margin to the right of the chart, to avoid marks or value labels being clipped
+ * There is margin between the axis and the labels
+ * There is margin between the labels and the left and bottom of the chart
+ */
+const LineChart = ({ data, ...props }) => {
+  return [VerticalChart, { data, ...props }, [LineArea, { data }]]
+}
+
+/**
+ *    4 |        _
+ *    3 |       | |   _
+ *    2 |   _   | |  | |
+ *    1 |__| |__| |__| |__
+ *          A    B    C
+ */
+const BarChart = ({ data, ...props }) => {
+  return [VerticalChart, { data, ...props }, [BarArea, { data }]]
 }
 
 const PieChart = ({ data, height, measure, width }) => {
@@ -1128,6 +1187,31 @@ const data = {
   _records__cnt: [9, 47, 3, 22, 21, 195, 1, 385, 58, 212, 282, 44, 4],
 }
 
+const barLineData = {
+  color: [
+    ...data["_records__cnt"].map(() => PALETTE[0]),
+    ...data["_records__cnt"].map(() => PALETTE[3]),
+  ],
+  category: data["colorBy"],
+  label: [
+    ...data["_records__cnt"],
+    ...data["_records__cnt"].map((val) => val - 88).reverse(),
+  ].map((val) => String(val)),
+  title: [
+    ...data["_records__cnt"],
+    ...data["_records__cnt"].map((val) => val - 88).reverse(),
+  ].map(
+    (val, i) =>
+      `colorBy: ${
+        data["colorBy"][i % data["colorBy"].length]
+      }\nTotal records: ${val}`
+  ),
+  value: [
+    ...data["_records__cnt"],
+    ...data["_records__cnt"].map((val) => val - 88).reverse(),
+  ],
+}
+
 const App = eventHandlers(
   ({ state }) => [
     VGroup,
@@ -1140,28 +1224,20 @@ const App = eventHandlers(
       [
         LineChart,
         {
-          data: {
-            color: [
-              ...data["_records__cnt"].map(() => PALETTE[0]),
-              ...data["_records__cnt"].map(() => PALETTE[3]),
-            ],
-            category: data["colorBy"],
-            label: [
-              ...data["_records__cnt"],
-              ...data["_records__cnt"].map((val) => val + 150).reverse(),
-            ].map((val) => String(val)),
-            title: [
-              ...data["_records__cnt"],
-              ...data["_records__cnt"].map((val) => val + 150).reverse(),
-            ].map(
-              (val, i) =>
-                `colorBy: ${data["colorBy"][i]}\nTotal records: ${val}`
-            ),
-            value: [
-              ...data["_records__cnt"],
-              ...data["_records__cnt"].map((val) => val + 150).reverse(),
-            ],
-          },
+          data: barLineData,
+          height: 400 / 1,
+          width: 600 / 1,
+        },
+      ],
+    ],
+
+    [
+      "div",
+      { style: { width: 600, height: 400 } },
+      [
+        BarChart,
+        {
+          data: barLineData,
           height: 400 / 1,
           width: 600 / 1,
         },
