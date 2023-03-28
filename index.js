@@ -600,10 +600,10 @@ const PALETTE = [
 const rad = (d) => (Math.PI * d) / 180
 const sum = (xs, f) => xs.reduce((r, x) => r + (f ? f(x) : x), 0)
 
-const measureText = (s) => {
+const measureText = (s, fontSize) => {
   const canvas = document.createElement("canvas")
   const g = canvas.getContext("2d")
-  g.font = "11px Arial"
+  g.font = `${fontSize || 11}px Arial`
 
   return g.measureText(s).width
 }
@@ -858,60 +858,96 @@ const VerticalChart = ({
   ]
 }
 
-const BarArea = ({ data, dx, toX, toY }) => {
+const createHitTest = () => {
+  const hitData = []
+
+  return (x1, y1, x2, y2) => {
+    for (const rect of hitData) {
+      if (x2 >= rect.x1 && x1 < rect.x2 && y2 >= rect.y1 && y1 < rect.y2) {
+        return true
+      }
+    }
+
+    hitData.push({
+      x1,
+      y1,
+      x2,
+      y2,
+    })
+
+    return false
+  }
+}
+
+const BarSeries = ({ data, dx, toX, toY }) => {
   const numberOfSeries = Math.floor(data.value.length / data.category.length)
   const perBar = Math.max(0, (dx - MARGIN) / numberOfSeries)
   const toXAdjusted = (i) =>
     toX(i) - (dx - MARGIN) / 2 + Math.floor(i / data.category.length) * perBar
 
-  const bars = data.value.map((val, i) => {
+  const hitTest = createHitTest()
+
+  const bars = data.value.flatMap((val, i) => {
     const x = toXAdjusted(i)
     const y1 = val >= 0 ? toY(val) : toY(0)
     const y2 = val >= 0 ? toY(0) : toY(val)
 
-    return [
-      "rect",
-      {
-        fill: data.color[i],
-        x: x,
-        y: y1,
-        width: perBar,
-        height: y2 - y1,
-      },
-      ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
-    ]
+    return hitTest(x, y1, x + perBar, y2)
+      ? []
+      : [
+          [
+            "rect",
+            {
+              fill: data.color[i],
+              x: x,
+              y: y1,
+              width: perBar,
+              height: y2 - y1,
+            },
+            ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
+          ],
+        ]
   })
 
   const valueLabels = !data.label
     ? []
-    : data.value.flatMap((val, i) =>
-        measureText(data.label[i]) >= perBar
-          ? []
-          : [
-              [
-                "text",
-                {
-                  "font-family": "Arial",
-                  "font-size": FONTSIZE,
-                  "paint-order": "stroke",
-                  stroke: "#ffffff",
-                  "stroke-width": 2,
-                  "text-anchor": "middle",
-                  x: toXAdjusted(i) + perBar / 2,
-                  y: toY(data.value[i]) + (val >= 0 ? -FONTSIZE / 2 : FONTSIZE),
-                },
-                data.label[i],
-              ],
-            ]
-      )
+    : data.value.flatMap((val, i) => {
+        const x = toXAdjusted(i) + perBar / 2
+        const y = toY(data.value[i]) + (val >= 0 ? -FONTSIZE / 2 : FONTSIZE)
+        const w = measureText(data.label[i])
+
+        if (hitTest(x - w / 2, y - FONTSIZE, x + w / 2, y)) {
+          return []
+        }
+
+        return [
+          [
+            "text",
+            {
+              "font-family": "Arial",
+              "font-size": FONTSIZE,
+              "paint-order": "stroke",
+              stroke: "#ffffff",
+              "stroke-width": 2,
+              "text-anchor": "middle",
+              x,
+              y,
+            },
+            data.label[i],
+          ],
+        ]
+      })
 
   return ["g", {}, ...bars, ...valueLabels]
 }
 
-const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
+const StackedBarSeries = ({ data, dx, negValues, posValues, toX, toY }) => {
+  const hitTest = createHitTest()
+
   const negY = negValues.slice()
   const posY = posValues.slice()
   const bars = data.value.flatMap((val, i) => {
+    const x = toX(i) - (dx - MARGIN) / 2
     let y1, y2
     if (val >= 0) {
       y1 = toY(posY[i % data.category.length])
@@ -923,19 +959,22 @@ const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
       y1 = toY(negY[i % data.category.length])
     }
 
+    hitTest(x, y1, x + dx - MARGIN, y2)
+
     return [
       [
         "rect",
         {
           fill: data.color[i],
-          x: toX(i) - (dx - MARGIN) / 2,
+          x,
           y: y1,
           width: dx - MARGIN,
           height: y2 - y1,
         },
         ...(!data.title ? [] : [["title", {}, String(data.title[i])]]),
       ],
-      ...(y2 - y1 < (FONTSIZE - 2) * LINESPACING
+      ...(y2 - y1 < (FONTSIZE - 2) * LINESPACING ||
+      measureText(String(val), FONTSIZE - 2) > dx - MARGIN
         ? []
         : [
             [
@@ -955,33 +994,41 @@ const StackedArea = ({ data, dx, negValues, posValues, toX, toY }) => {
 
   const valueLabels = !data.label
     ? []
-    : data.category.map((_, i) => {
+    : data.category.flatMap((_, i) => {
         const negValue = negValues[i % data.category.length]
         const posValue = posValues[i % data.category.length]
         const val = posValue + negValue
+        const x = toX(i)
         const y =
           val >= 0 ? toY(posValue) - FONTSIZE / 2 : toY(negValue) + FONTSIZE
+        const w = measureText(String(val))
+
+        if (hitTest(x - w / 2, y - FONTSIZE, x + w / 2, y)) {
+          return []
+        }
 
         return [
-          "text",
-          {
-            "font-family": "Arial",
-            "font-size": FONTSIZE,
-            "paint-order": "stroke",
-            stroke: "#ffffff",
-            "stroke-width": 2,
-            "text-anchor": "middle",
-            x: toX(i),
-            y,
-          },
-          String(val), // format!
+          [
+            "text",
+            {
+              "font-family": "Arial",
+              "font-size": FONTSIZE,
+              "paint-order": "stroke",
+              stroke: "#ffffff",
+              "stroke-width": 2,
+              "text-anchor": "middle",
+              x,
+              y,
+            },
+            String(val), // format!
+          ],
         ]
       })
 
   return ["g", {}, ...bars, ...valueLabels]
 }
 
-const LineArea = ({ data, toX, toY }) => {
+const LineSeries = ({ data, toX, toY }) => {
   const markers = data.value.flatMap((val, i, arr) => {
     const x = toX(i)
     const y = toY(val)
@@ -1038,11 +1085,11 @@ const LineArea = ({ data, toX, toY }) => {
 }
 
 const LineChart = ({ data, ...props }) => {
-  return [VerticalChart, { data, ...props }, [LineArea, { data }]]
+  return [VerticalChart, { data, ...props }, [LineSeries, { data }]]
 }
 
 const BarChart = ({ data, ...props }) => {
-  return [VerticalChart, { data, ...props }, [BarArea, { data }]]
+  return [VerticalChart, { data, ...props }, [BarSeries, { data }]]
 }
 
 const StackedBarChart = ({ data, ...props }) => {
@@ -1065,7 +1112,7 @@ const StackedBarChart = ({ data, ...props }) => {
       maxValue: Math.max(...posValues),
       minValue: Math.min(...negValues),
     },
-    [StackedArea, { data, negValues, posValues }],
+    [StackedBarSeries, { data, negValues, posValues }],
   ]
 }
 
@@ -1353,7 +1400,7 @@ const App = eventHandlers(
           width: 600 / 1,
         },
         [
-          BarArea,
+          BarSeries,
           {
             data: {
               ...barLineData,
@@ -1364,7 +1411,7 @@ const App = eventHandlers(
           },
         ],
         [
-          LineArea,
+          LineSeries,
           {
             data: {
               ...barLineData,
